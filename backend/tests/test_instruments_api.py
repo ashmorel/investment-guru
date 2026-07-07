@@ -36,9 +36,7 @@ class FakeLookupProvider:
 
 
 def _override(client):
-    # client fixture exposes the app via its transport
-    app = client._transport.app  # httpx.ASGITransport
-    app.dependency_overrides[get_provider] = lambda: FakeLookupProvider()
+    client.app.dependency_overrides[get_provider] = lambda: FakeLookupProvider()
 
 
 async def test_lookup_creates_instrument(auth_client, db_session):

@@ -30,6 +30,12 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: ruff check .
+      - name: Exercise the alembic migration chain
+        run: |
+          psql postgresql://guru:guru@localhost:5433/postgres -c 'CREATE DATABASE guru_migrate;'
+          DATABASE_URL=postgresql+asyncpg://guru:guru@localhost:5433/guru_migrate alembic upgrade head
+          DATABASE_URL=postgresql+asyncpg://guru:guru@localhost:5433/guru_migrate alembic downgrade base
+          DATABASE_URL=postgresql+asyncpg://guru:guru@localhost:5433/guru_migrate alembic upgrade head
       - run: pytest -v
 
   frontend:

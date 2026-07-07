@@ -37,9 +37,7 @@ class SomeUnknownProvider(AllKnownProvider):
 
 
 def _override(client, provider=None):
-    client._transport.app.dependency_overrides[get_provider] = (
-        lambda: provider or AllKnownProvider()
-    )
+    client.app.dependency_overrides[get_provider] = lambda: provider or AllKnownProvider()
 
 
 async def test_preview_then_commit_new_portfolio(auth_client):
