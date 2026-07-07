@@ -24,3 +24,12 @@ def test_parse_yahoo_export():
 def test_missing_symbol_column_raises():
     with pytest.raises(CsvFormatError):
         parse_yahoo_csv(b"Name,Price\nApple,100\n")
+
+
+def test_non_finite_decimals_yield_none():
+    csv_bytes = b"Symbol,Quantity,Purchase Price,Comment\nAAPL,inf,NaN,bad row\n"
+    rows = parse_yahoo_csv(csv_bytes)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.quantity is None
+    assert row.purchase_price is None

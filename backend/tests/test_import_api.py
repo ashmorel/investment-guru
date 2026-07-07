@@ -100,6 +100,29 @@ async def test_commit_merge_update_and_skip(auth_client, make_instrument):
     assert positions[0]["quantity"] == "10.000000"
 
 
+async def test_commit_intra_payload_duplicate_symbol_deduped(auth_client):
+    _override(auth_client)
+    pid = (await auth_client.post(
+        "/api/portfolios", json={"name": "Dup", "kind": "real", "base_currency": "GBP"}
+    )).json()["id"]
+
+    resp = await auth_client.post(
+        "/api/imports/commit",
+        json={"portfolio_id": pid, "new_portfolio": None, "merge": "update",
+              "rows": [
+                  {"symbol": "AAPL", "quantity": "5", "avg_cost": "100"},
+                  {"symbol": "AAPL", "quantity": "10", "avg_cost": "110"},
+              ]},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 1, "updated": 1, "skipped": 0, "portfolio_id": pid}
+
+    positions = (await auth_client.get(f"/api/portfolios/{pid}/positions")).json()
+    assert len(positions) == 1
+    assert positions[0]["symbol"] == "AAPL"
+    assert positions[0]["quantity"] == "10.000000"
+
+
 async def test_commit_merge_replace(auth_client, make_instrument):
     _override(auth_client)
     await make_instrument("AAPL")

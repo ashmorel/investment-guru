@@ -21,9 +21,10 @@ def _dec(value) -> Decimal | None:
     if value is None or (isinstance(value, float) and pd.isna(value)) or value == "":
         return None
     try:
-        return Decimal(str(value))
+        d = Decimal(str(value))
     except InvalidOperation:
         return None
+    return d if d.is_finite() else None
 
 
 def parse_yahoo_csv(data: bytes) -> list[ParsedRow]:

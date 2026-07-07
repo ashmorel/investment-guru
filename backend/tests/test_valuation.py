@@ -11,7 +11,7 @@ from app.services.valuation import FxService, normalise, value_portfolio
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-def test_normalise_pence():
+async def test_normalise_pence():
     amount, ccy = normalise(Decimal("702.30"), "GBp")
     assert (amount, ccy) == (Decimal("7.023"), "GBP")
     assert normalise(Decimal("5"), "USD") == (Decimal("5"), "USD")

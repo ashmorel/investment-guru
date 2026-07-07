@@ -94,10 +94,12 @@ async def commit(
     for row in body.rows:
         current = existing.get(row.symbol)
         if current is None:
-            db.add(Position(
+            new_position = Position(
                 portfolio_id=pf.id, instrument_id=instruments[row.symbol].id,
                 quantity=row.quantity, avg_cost=row.avg_cost,
-            ))
+            )
+            db.add(new_position)
+            existing[row.symbol] = new_position
             created += 1
         elif body.merge == "skip":
             skipped += 1
