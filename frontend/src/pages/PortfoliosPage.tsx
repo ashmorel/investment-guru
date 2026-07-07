@@ -71,7 +71,7 @@ export default function PortfoliosPage() {
             className="mt-1 block rounded-md border border-border px-3 py-2"
           >
             <option value="real">Real</option>
-            <option value="watchlist">Watch List</option>
+            <option value="watchlist">Watchlist</option>
           </select>
         </label>
         <label className="text-sm text-text">

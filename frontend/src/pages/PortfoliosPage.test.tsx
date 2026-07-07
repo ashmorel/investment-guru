@@ -29,6 +29,6 @@ describe("PortfoliosPage", () => {
     renderPage();
     expect(await screen.findByText("Growth")).toBeInTheDocument();
     expect(screen.getByText("Watch")).toBeInTheDocument();
-    expect(screen.getByText(/watchlist/i)).toBeInTheDocument();
+    expect(screen.getByText(/watchlist · 5 positions/i)).toBeInTheDocument();
   });
 });
