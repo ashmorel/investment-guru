@@ -47,6 +47,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
             yield session
 
     app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[get_services] = _test_services
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -87,3 +88,24 @@ def make_instrument(db_session):
         return await _make_instrument(db_session, symbol, **overrides)
 
     return _factory
+
+
+from app.api.valuation import get_services  # noqa: E402
+from app.services.market_data.quotes import QuoteService  # noqa: E402
+from app.services.valuation import FxService  # noqa: E402
+
+
+class _NullProvider:
+    async def get_quotes(self, symbols):
+        return {}
+
+    async def get_fx_rate(self, base, quote):
+        raise LookupError("no fx in tests")
+
+    async def lookup(self, symbol):
+        return None
+
+
+def _test_services():
+    provider = _NullProvider()
+    return QuoteService(provider), FxService(provider)
