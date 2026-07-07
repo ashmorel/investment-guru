@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { apiFetch } from "./lib/api";
 import LoginPage from "./pages/LoginPage";
+import PortfolioDetailPage from "./pages/PortfolioDetailPage";
+import PortfoliosPage from "./pages/PortfoliosPage";
 
 const queryClient = new QueryClient();
 
@@ -22,11 +24,11 @@ function NavItem({ to, label }: { to: string; label: string }) {
   );
 }
 
-function DisabledNavItem({ label, note }: { label: string; note: string }) {
+function DisabledNavItem({ label, note }: { label: string; note?: string }) {
   return (
     <li>
       <span className="block cursor-not-allowed rounded-md px-3 py-2 text-muted" aria-disabled="true">
-        {label} <span className="text-xs">({note})</span>
+        {label} {note && <span className="text-xs">({note})</span>}
       </span>
     </li>
   );
@@ -50,7 +52,7 @@ function RequireAuth() {
           <DisabledNavItem label="Guru" note="Phase 2" />
           <DisabledNavItem label="ORSO" note="Phase 4" />
           <NavItem to="/import" label="Import CSV" />
-          <DisabledNavItem label="Settings" note="" />
+          <DisabledNavItem label="Settings" />
         </ul>
       </nav>
       <main className="flex-1 p-8">
@@ -68,8 +70,8 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
             <Route path="/" element={<div>Dashboard (Task 15)</div>} />
-            <Route path="/portfolios" element={<div>Portfolios (Task 13)</div>} />
-            <Route path="/portfolios/:id" element={<div>Portfolio (Task 13)</div>} />
+            <Route path="/portfolios" element={<PortfoliosPage />} />
+            <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
             <Route path="/import" element={<div>Import (Task 14)</div>} />
           </Route>
         </Routes>
