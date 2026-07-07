@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.auth import router as auth_router
+from app.api.imports import router as imports_router
 from app.api.instruments import router as instruments_router
 from app.api.portfolios import router as portfolios_router
 from app.api.positions import router as positions_router
@@ -15,6 +16,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth_router)
+    app.include_router(imports_router)
     app.include_router(instruments_router)
     app.include_router(portfolios_router)
     app.include_router(positions_router)
