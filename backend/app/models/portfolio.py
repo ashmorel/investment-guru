@@ -15,7 +15,7 @@ class Portfolio(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     kind: Mapped[str] = mapped_column(String(16))  # real | watchlist
-    base_currency: Mapped[str] = mapped_column(String(8), default="GBP")
+    base_currency: Mapped[str] = mapped_column(String(8), default="GBP", server_default="GBP")
 
     positions: Mapped[list["Position"]] = relationship(
         back_populates="portfolio", cascade="all, delete-orphan", lazy="selectin"

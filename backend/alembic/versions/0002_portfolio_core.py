@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("name", sa.String(120), nullable=False),
         sa.Column("kind", sa.String(16), nullable=False),
-        sa.Column("base_currency", sa.String(8), nullable=False),
+        sa.Column("base_currency", sa.String(8), nullable=False, server_default="GBP"),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
     op.create_index("ix_portfolios_user_id", "portfolios", ["user_id"])
