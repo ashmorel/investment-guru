@@ -66,3 +66,24 @@ async def auth_client(client, db_session) -> httpx.AsyncClient:
     )
     assert resp.status_code == 204
     return client
+
+
+from app.models import Instrument  # noqa: E402
+
+
+async def _make_instrument(db_session, symbol: str, **overrides) -> Instrument:
+    defaults = dict(
+        symbol=symbol, name=f"{symbol} Co", exchange="NMS", market="US", currency="USD"
+    )
+    inst = Instrument(**{**defaults, **overrides})
+    db_session.add(inst)
+    await db_session.commit()
+    return inst
+
+
+@pytest_asyncio.fixture
+def make_instrument(db_session):
+    async def _factory(symbol: str, **overrides) -> Instrument:
+        return await _make_instrument(db_session, symbol, **overrides)
+
+    return _factory
