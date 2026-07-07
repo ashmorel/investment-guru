@@ -1,0 +1,1 @@
+CREATE DATABASE guru_test;
