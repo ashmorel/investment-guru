@@ -36,7 +36,7 @@ investment-guru/
 
 - **Auth (phase 1):** single account, email + password, session cookie. No signup/verification flow yet; all tables carry `user_id` from day one.
 - **Scheduling:** APScheduler inside the FastAPI process (daily digest). Replaced by platform cron on cloud move.
-- **Privacy:** private GitHub repo (holds real position data in fixtures/screenshots at times); never read or commit `.env`; `.env.example` documents variables.
+- **Privacy:** repo is public (user's choice, 2026-07-07) — therefore **no real holdings data is ever committed**: test fixtures, seed data and screenshots use synthetic portfolios only; real data lives only in the local DB. Never read or commit `.env`; `.env.example` documents variables.
 
 ### 3.1 Data model (core)
 
