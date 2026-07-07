@@ -39,3 +39,24 @@ class FxRate(Base):
     pair: Mapped[str] = mapped_column(String(8), index=True)  # e.g. USDGBP
     date: Mapped[date] = mapped_column(Date)
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+
+
+class InstrumentFundamentals(Base):
+    __tablename__ = "instrument_fundamentals"
+
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
+    next_earnings_date: Mapped[date | None] = mapped_column(Date)
+    fetched_at: Mapped[datetime] = mapped_column()
+
+
+class NewsItem(Base):
+    __tablename__ = "news_items"
+    __table_args__ = (UniqueConstraint("instrument_id", "url"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    source: Mapped[str] = mapped_column(String(100))
+    url: Mapped[str] = mapped_column(String(1000))
+    published_at: Mapped[datetime | None] = mapped_column()
+    fetched_at: Mapped[datetime] = mapped_column()
