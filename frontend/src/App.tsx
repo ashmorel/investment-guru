@@ -1,0 +1,79 @@
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { apiFetch } from "./lib/api";
+import LoginPage from "./pages/LoginPage";
+
+const queryClient = new QueryClient();
+
+function NavItem({ to, label }: { to: string; label: string }) {
+  return (
+    <li>
+      <NavLink
+        to={to}
+        className={({ isActive }) =>
+          `block rounded-md px-3 py-2 ${
+            isActive ? "bg-accent-subtle text-accent font-medium" : "text-text hover:bg-accent-subtle"
+          }`
+        }
+      >
+        {label}
+      </NavLink>
+    </li>
+  );
+}
+
+function DisabledNavItem({ label, note }: { label: string; note: string }) {
+  return (
+    <li>
+      <span className="block cursor-not-allowed rounded-md px-3 py-2 text-muted" aria-disabled="true">
+        {label} <span className="text-xs">({note})</span>
+      </span>
+    </li>
+  );
+}
+
+function RequireAuth() {
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: () => apiFetch<{ id: number; email: string }>("/api/auth/me"),
+    retry: false,
+  });
+  if (me.isPending) return <div className="p-8 text-muted">Loading…</div>;
+  if (me.isError) return <Navigate to="/login" replace />;
+  return (
+    <div className="flex min-h-screen bg-bg">
+      <nav className="w-56 shrink-0 border-r border-border bg-surface p-4">
+        <p className="mb-6 font-semibold text-text">Investment Guru</p>
+        <ul className="space-y-1 text-sm">
+          <NavItem to="/" label="Dashboard" />
+          <NavItem to="/portfolios" label="Portfolios" />
+          <DisabledNavItem label="Guru" note="Phase 2" />
+          <DisabledNavItem label="ORSO" note="Phase 4" />
+          <NavItem to="/import" label="Import CSV" />
+          <DisabledNavItem label="Settings" note="" />
+        </ul>
+      </nav>
+      <main className="flex-1 p-8">
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<RequireAuth />}>
+            <Route path="/" element={<div>Dashboard (Task 15)</div>} />
+            <Route path="/portfolios" element={<div>Portfolios (Task 13)</div>} />
+            <Route path="/portfolios/:id" element={<div>Portfolio (Task 13)</div>} />
+            <Route path="/import" element={<div>Import (Task 14)</div>} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
+  );
+}

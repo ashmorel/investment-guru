@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-border: #e6e8ec;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-accent: #4f46e5;
+  --color-accent-subtle: #eef2ff;
+  --color-gain: #059669;
+  --color-loss: #dc2626;
+  --color-flag: #d97706;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
