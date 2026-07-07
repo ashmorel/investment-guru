@@ -1,8 +1,9 @@
 import asyncio
 from datetime import UTC, datetime
+from datetime import date as _date
 from decimal import Decimal
 
-from app.services.market_data.base import InstrumentInfo, Quote, infer_market
+from app.services.market_data.base import Bar, InstrumentInfo, Quote, infer_market
 
 
 def parse_quote(symbol: str, info: dict) -> Quote | None:
@@ -34,6 +35,23 @@ def parse_instrument_info(symbol: str, info: dict) -> InstrumentInfo | None:
         sector=info.get("sector"),
         industry=info.get("industry"),
     )
+
+
+def parse_history(rows: list[dict]) -> list[Bar]:
+    bars: list[Bar] = []
+    for r in rows:
+        close = r.get("close")
+        if close is None:
+            continue
+        d = r["date"]
+        bars.append(Bar(
+            date=_date.fromisoformat(d) if isinstance(d, str) else d,
+            open=Decimal(str(r["open"])), high=Decimal(str(r["high"])),
+            low=Decimal(str(r["low"])), close=Decimal(str(close)),
+            volume=None if r.get("volume") is None else int(r["volume"]),
+        ))
+    bars.sort(key=lambda b: b.date)
+    return bars
 
 
 class YahooProvider:
@@ -73,3 +91,21 @@ class YahooProvider:
         except Exception:
             return None
         return parse_instrument_info(symbol, info)
+
+    def _fetch_history(self, symbol: str, days: int) -> list[dict]:
+        import yfinance as yf
+
+        period = "2y" if days > 365 else "1y"
+        df = yf.Ticker(symbol).history(period=period)
+        rows = []
+        for idx, row in df.iterrows():
+            rows.append({
+                "date": idx.date(),
+                "open": row["Open"], "high": row["High"], "low": row["Low"],
+                "close": row["Close"], "volume": row.get("Volume"),
+            })
+        return rows
+
+    async def get_history(self, symbol: str, days: int = 400) -> list[Bar]:
+        rows = await asyncio.to_thread(self._fetch_history, symbol, days)
+        return parse_history(rows)

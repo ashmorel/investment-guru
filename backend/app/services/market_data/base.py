@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol
 
@@ -11,6 +11,16 @@ class Quote:
     currency: str
     previous_close: Decimal | None
     as_of: datetime
+
+
+@dataclass(frozen=True)
+class Bar:
+    date: date
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int | None
 
 
 @dataclass(frozen=True)
@@ -36,3 +46,4 @@ class MarketDataProvider(Protocol):
     async def get_quotes(self, symbols: list[str]) -> dict[str, Quote]: ...
     async def get_fx_rate(self, base: str, quote: str) -> Decimal: ...
     async def lookup(self, symbol: str) -> InstrumentInfo | None: ...
+    async def get_history(self, symbol: str, days: int = 400) -> list["Bar"]: ...
