@@ -49,4 +49,74 @@ describe("ImportWizardPage", () => {
     expect(await screen.findByText("AAPL")).toBeInTheDocument();
     expect(screen.getByText(/not recognised/i)).toBeInTheDocument();
   });
+
+  it("renders the preview response's errors array", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/portfolios")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/imports/preview")) {
+        return new Response(
+          JSON.stringify({
+            rows: [
+              { symbol: "AAPL", quantity: "10", purchase_price: "150.25", comment: null, known: true },
+            ],
+            errors: ["Row 3: malformed quantity", "Row 7: missing symbol"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+    const file = new File(["Symbol,Quantity\nAAPL,10\n"], "pf.csv", { type: "text/csv" });
+    await userEvent.upload(screen.getByLabelText(/csv file/i), file);
+    await userEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect(await screen.findByText(/Row 3: malformed quantity/)).toBeInTheDocument();
+    expect(screen.getByText(/Row 7: missing symbol/)).toBeInTheDocument();
+  });
+
+  it("shows the server detail when the commit fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/portfolios")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/imports/preview")) {
+        return new Response(
+          JSON.stringify({
+            rows: [
+              { symbol: "AAPL", quantity: "10", purchase_price: "150.25", comment: null, known: true },
+            ],
+            errors: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/imports/commit") && init?.method === "POST") {
+        return new Response(JSON.stringify({ detail: "Unknown symbol AAPL" }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+    const file = new File(["Symbol,Quantity\nAAPL,10\n"], "pf.csv", { type: "text/csv" });
+    await userEvent.upload(screen.getByLabelText(/csv file/i), file);
+    await userEvent.click(screen.getByRole("button", { name: /upload/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /import 1 rows/i }));
+
+    expect(await screen.findByText(/Unknown symbol AAPL/)).toBeInTheDocument();
+  });
 });

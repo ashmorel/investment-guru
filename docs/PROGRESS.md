@@ -22,6 +22,9 @@ _Last updated: 2026-07-07 (Task 15 — Phase 1 complete)._
 ### Not yet (later phases, per spec §8)
 Profile, the Guru (Phase 2), signals + price history charts (Phase 3), digest, ORSO (Phase 4). `price_bars` table exists but is unpopulated until Phase 3.
 
+### Post-review hardening (2026-07-07)
+Four fix-commits from the final whole-branch review: valuation integrity flags (costed_positions/day_change_partial/currency_mismatch guard + zero-cost-basis fix); position uniqueness (migration 0003 + 409), symbol normalisation at all API boundaries, and request-owned transaction boundaries; test conftest default null provider + CI now exercises the full alembic upgrade/downgrade chain; import-wizard error rendering + docs/repo cleanup.
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433

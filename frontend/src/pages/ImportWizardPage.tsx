@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { apiFetch } from "../lib/api";
+import { apiFetch, ApiError } from "../lib/api";
 import type { Portfolio } from "../lib/types";
 
 interface PreviewRow {
@@ -10,6 +10,21 @@ interface PreviewRow {
   purchase_price: string | null;
   comment: string | null;
   known: boolean;
+}
+
+interface PreviewResponse {
+  rows: PreviewRow[];
+  errors: string[];
+}
+
+function apiErrorDetail(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  try {
+    const body = JSON.parse(err.message) as { detail?: unknown };
+    return typeof body.detail === "string" ? body.detail : null;
+  } catch {
+    return null;
+  }
 }
 
 interface CommitResult {
@@ -22,6 +37,7 @@ interface CommitResult {
 export default function ImportWizardPage() {
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<PreviewRow[] | null>(null);
+  const [previewErrors, setPreviewErrors] = useState<string[]>([]);
   const [target, setTarget] = useState<string>("new");
   const [newName, setNewName] = useState("Imported");
   const [newKind, setNewKind] = useState<"real" | "watchlist">("real");
@@ -44,9 +60,12 @@ export default function ImportWizardPage() {
         body: form,
       });
       if (!resp.ok) throw new Error(await resp.text());
-      return (await resp.json()) as { rows: PreviewRow[] };
+      return (await resp.json()) as PreviewResponse;
     },
-    onSuccess: (data) => setRows(data.rows),
+    onSuccess: (data) => {
+      setRows(data.rows);
+      setPreviewErrors(data.errors ?? []);
+    },
   });
 
   const commit = useMutation({
@@ -134,6 +153,13 @@ export default function ImportWizardPage() {
               ))}
             </tbody>
           </table>
+          {previewErrors.length > 0 && (
+            <ul className="list-disc pl-5 text-sm text-loss">
+              {previewErrors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
 
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm text-muted">
@@ -208,6 +234,11 @@ export default function ImportWizardPage() {
             >
               3. Import {rows.filter((r) => r.known).length} rows
             </button>
+            {commit.isError && (
+              <p className="text-sm text-loss">
+                {apiErrorDetail(commit.error) ?? "Import failed — please try again."}
+              </p>
+            )}
           </div>
         </section>
       )}
