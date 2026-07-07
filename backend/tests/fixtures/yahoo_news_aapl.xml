@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>AAPL News</title>
+  <item>
+    <title>Apple unveils new product line</title>
+    <link>https://example.com/aapl-1</link>
+    <pubDate>Mon, 06 Jul 2026 14:30:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>Analysts weigh in on Apple quarter</title>
+    <link>https://example.com/aapl-2</link>
+    <pubDate>Sun, 05 Jul 2026 09:00:00 GMT</pubDate>
+  </item>
+</channel></rss>
