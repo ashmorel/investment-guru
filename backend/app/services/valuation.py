@@ -67,6 +67,7 @@ class PositionValuation:
     unrealized_pnl_pct: Decimal | None
     day_change_base: Decimal | None
     quote_as_of: datetime | None
+    currency_mismatch: bool = False
 
 
 @dataclass
@@ -82,6 +83,8 @@ class PortfolioSummary:
     positions: list[PositionValuation] = field(default_factory=list)
     priced_positions: int = 0
     unpriced_positions: int = 0
+    costed_positions: int = 0
+    day_change_partial: bool = False
 
 
 def _round(v: Decimal) -> Decimal:
@@ -101,6 +104,8 @@ async def value_portfolio(
     )
     total_value = total_cost = day_change = Decimal("0")
     any_priced = False
+    any_cost = False
+    any_day_change_missing = False
 
     for pos in portfolio.positions:
         inst = pos.instrument
@@ -114,32 +119,44 @@ async def value_portfolio(
             quote_as_of=quote.as_of if quote else None,
         )
         if quote is not None and pos.quantity is not None:
-            price_major, ccy = normalise(quote.price, quote.currency)
-            rate = await fx.get_rate(db, ccy, portfolio.base_currency)
+            price_major, price_ccy = normalise(quote.price, quote.currency)
+            rate = await fx.get_rate(db, price_ccy, portfolio.base_currency)
             value = _round(pos.quantity * price_major * rate)
             pv.market_value_base = value
             total_value += value
             any_priced = True
 
-            exposure_key = ccy
+            exposure_key = price_ccy
             summary.currency_exposure[exposure_key] = (
                 summary.currency_exposure.get(exposure_key, Decimal("0")) + value
             )
 
             if pos.avg_cost is not None:
                 cost_major, cost_ccy = normalise(pos.avg_cost, inst.currency)
-                cost_rate = await fx.get_rate(db, cost_ccy, portfolio.base_currency)
-                cost = _round(pos.quantity * cost_major * cost_rate)
-                pv.cost_basis_base = cost
-                pv.unrealized_pnl_base = value - cost
-                if cost != 0:
-                    pv.unrealized_pnl_pct = _round((value - cost) / cost * 100)
-                total_cost += cost
+                if quote.currency != inst.currency:
+                    # source-agreement guard: the live quote and the instrument's
+                    # own listing currency disagree (e.g. quote says "GBp" but the
+                    # instrument says "GBP") — normalising both hides that
+                    # disagreement, so treat the cost basis as UNKNOWN rather than
+                    # silently mixing units.
+                    pv.currency_mismatch = True
+                else:
+                    cost_rate = await fx.get_rate(db, cost_ccy, portfolio.base_currency)
+                    cost = _round(pos.quantity * cost_major * cost_rate)
+                    pv.cost_basis_base = cost
+                    pv.unrealized_pnl_base = value - cost
+                    if cost != 0:
+                        pv.unrealized_pnl_pct = _round((value - cost) / cost * 100)
+                    total_cost += cost
+                    any_cost = True
+                    summary.costed_positions += 1
 
             if quote.previous_close is not None:
                 prev_major, _ = normalise(quote.previous_close, quote.currency)
                 pv.day_change_base = _round(pos.quantity * (price_major - prev_major) * rate)
                 day_change += pv.day_change_base
+            else:
+                any_day_change_missing = True
 
             summary.priced_positions += 1
         elif pos.quantity is not None:
@@ -148,9 +165,11 @@ async def value_portfolio(
 
     if any_priced:
         summary.total_value = _round(total_value)
-        summary.total_cost = _round(total_cost) if total_cost else None
-        if summary.total_cost:
+        summary.total_cost = _round(total_cost) if any_cost else None
+        if summary.total_cost is not None:
             summary.total_pnl = summary.total_value - summary.total_cost
-            summary.total_pnl_pct = _round(summary.total_pnl / summary.total_cost * 100)
+            if summary.total_cost != 0:
+                summary.total_pnl_pct = _round(summary.total_pnl / summary.total_cost * 100)
         summary.day_change = _round(day_change)
+        summary.day_change_partial = any_day_change_missing
     return summary

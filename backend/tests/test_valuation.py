@@ -110,3 +110,119 @@ async def test_missing_quote_degrades(db_session, make_instrument):
     )
     assert summary.unpriced_positions == 1
     assert summary.positions[0].market_value_base is None
+
+
+async def test_currency_mismatch_guard(db_session, make_instrument):
+    """Instrument says GBP but the live quote comes back in GBp (pence) —
+    never silently divide/multiply the cost basis by 100 to compensate."""
+    user = User(email="v3@test.dev", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    inst = await make_instrument("MISMATCH.L", market="UK", currency="GBP", exchange="LSE")
+    pf = Portfolio(user_id=user.id, name="Mismatch", kind="real", base_currency="GBP")
+    db_session.add(pf)
+    await db_session.flush()
+    db_session.add(Position(portfolio_id=pf.id, instrument_id=inst.id,
+                            quantity=Decimal("10"), avg_cost=Decimal("500")))
+    await db_session.commit()
+    await db_session.refresh(pf, ["positions"])
+
+    quotes = QuoteService(FakeQuoteProvider({
+        "MISMATCH.L": _quote("MISMATCH.L", "700", "GBp", "690"),
+    }))
+    summary = await value_portfolio(db_session, pf, quotes, FxService(FakeFxProvider()))
+
+    pv = summary.positions[0]
+    assert pv.currency_mismatch is True
+    assert pv.cost_basis_base is None
+    assert pv.unrealized_pnl_base is None
+    assert pv.unrealized_pnl_pct is None
+    # value is still priced normally (700p = 7.00 GBP * 10 = 70.00)
+    assert pv.market_value_base == Decimal("70.00")
+    assert summary.total_value == Decimal("70.00")
+    # the mismatched cost must not be folded into total_cost
+    assert summary.total_cost is None
+
+
+async def test_zero_cost_basis_serialises_as_zero_not_none(db_session, make_instrument):
+    user = User(email="v4@test.dev", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    inst = await make_instrument("FREE")
+    pf = Portfolio(user_id=user.id, name="Z", kind="real", base_currency="GBP")
+    db_session.add(pf)
+    await db_session.flush()
+    db_session.add(Position(portfolio_id=pf.id, instrument_id=inst.id,
+                            quantity=Decimal("10"), avg_cost=Decimal("0")))
+    await db_session.commit()
+    await db_session.refresh(pf, ["positions"])
+
+    quotes = QuoteService(FakeQuoteProvider({
+        "FREE": _quote("FREE", "5", "USD", "5"),
+    }))
+    summary = await value_portfolio(db_session, pf, quotes, FxService(FakeFxProvider()))
+
+    assert summary.total_cost == Decimal("0.00")
+    assert summary.positions[0].cost_basis_base == Decimal("0.00")
+
+
+async def test_day_change_partial_when_one_position_missing_previous_close(
+    db_session, make_instrument
+):
+    user = User(email="v5@test.dev", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    a = await make_instrument("HASPREV")
+    b = await make_instrument("NOPREV")
+    pf = Portfolio(user_id=user.id, name="DC", kind="real", base_currency="GBP")
+    db_session.add(pf)
+    await db_session.flush()
+    db_session.add_all([
+        Position(portfolio_id=pf.id, instrument_id=a.id,
+                 quantity=Decimal("1"), avg_cost=Decimal("1")),
+        Position(portfolio_id=pf.id, instrument_id=b.id,
+                 quantity=Decimal("1"), avg_cost=Decimal("1")),
+    ])
+    await db_session.commit()
+    await db_session.refresh(pf, ["positions"])
+
+    no_prev_quote = Quote(symbol="NOPREV", price=Decimal("10"), currency="USD",
+                           previous_close=None, as_of=datetime.now(UTC))
+    quotes = QuoteService(FakeQuoteProvider({
+        "HASPREV": _quote("HASPREV", "10", "USD", "9"),
+        "NOPREV": no_prev_quote,
+    }))
+    summary = await value_portfolio(db_session, pf, quotes, FxService(FakeFxProvider()))
+
+    assert summary.priced_positions == 2
+    assert summary.day_change_partial is True
+
+
+async def test_costed_positions_when_one_priced_position_lacks_avg_cost(
+    db_session, make_instrument
+):
+    user = User(email="v6@test.dev", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    a = await make_instrument("COSTED")
+    b = await make_instrument("UNCOSTED")
+    pf = Portfolio(user_id=user.id, name="Costed", kind="real", base_currency="GBP")
+    db_session.add(pf)
+    await db_session.flush()
+    db_session.add_all([
+        Position(portfolio_id=pf.id, instrument_id=a.id,
+                 quantity=Decimal("1"), avg_cost=Decimal("1")),
+        Position(portfolio_id=pf.id, instrument_id=b.id,
+                 quantity=Decimal("1"), avg_cost=None),
+    ])
+    await db_session.commit()
+    await db_session.refresh(pf, ["positions"])
+
+    quotes = QuoteService(FakeQuoteProvider({
+        "COSTED": _quote("COSTED", "10", "USD", "9"),
+        "UNCOSTED": _quote("UNCOSTED", "10", "USD", "9"),
+    }))
+    summary = await value_portfolio(db_session, pf, quotes, FxService(FakeFxProvider()))
+
+    assert summary.priced_positions == 2
+    assert summary.costed_positions == 1

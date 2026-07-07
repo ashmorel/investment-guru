@@ -58,6 +58,8 @@ async def portfolio_valuation(
         "currency_exposure": {k: str(v) for k, v in summary.currency_exposure.items()},
         "priced_positions": summary.priced_positions,
         "unpriced_positions": summary.unpriced_positions,
+        "costed_positions": summary.costed_positions,
+        "day_change_partial": summary.day_change_partial,
         "positions": [
             {
                 "position_id": p.position_id, "symbol": p.symbol, "name": p.name,
@@ -69,6 +71,7 @@ async def portfolio_valuation(
                 "unrealized_pnl_pct": _s(p.unrealized_pnl_pct),
                 "day_change_base": _s(p.day_change_base),
                 "quote_as_of": p.quote_as_of.isoformat() if p.quote_as_of else None,
+                "currency_mismatch": p.currency_mismatch,
             }
             for p in summary.positions
         ],

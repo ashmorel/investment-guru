@@ -32,6 +32,7 @@ export interface PositionValuation {
   unrealized_pnl_pct: string | null;
   day_change_base: string | null;
   quote_as_of: string | null;
+  currency_mismatch?: boolean;
 }
 
 export interface PortfolioValuation {
@@ -45,6 +46,8 @@ export interface PortfolioValuation {
   currency_exposure: Record<string, string>;
   priced_positions: number;
   unpriced_positions: number;
+  costed_positions?: number;
+  day_change_partial?: boolean;
   positions: PositionValuation[];
 }
 
