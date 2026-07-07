@@ -1,0 +1,6 @@
+{
+  "symbol": "AAPL", "shortName": "Apple Inc.", "longName": "Apple Inc.",
+  "exchange": "NMS", "currency": "USD",
+  "regularMarketPrice": 231.55, "regularMarketPreviousClose": 229.10,
+  "sector": "Technology", "industry": "Consumer Electronics"
+}
