@@ -50,7 +50,7 @@ class QuoteService:
                 row.currency = quote.currency
                 row.previous_close = quote.previous_close
                 row.fetched_at = now
-        await db.commit()
+        await db.flush()
 
         result = fresh | fetched
         for symbol in missing:  # stale-cache fallback for anything the provider missed

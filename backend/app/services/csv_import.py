@@ -37,7 +37,7 @@ def parse_yahoo_csv(data: bytes) -> list[ParsedRow]:
 
     rows: list[ParsedRow] = []
     for _, r in df.iterrows():
-        symbol = (r.get("Symbol") or "").strip()
+        symbol = (r.get("Symbol") or "").strip().upper()
         if not symbol or symbol.startswith("$$"):
             continue
         comment = r.get("Comment")

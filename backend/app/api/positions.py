@@ -47,11 +47,24 @@ async def create_position(
     portfolio_id: int, body: PositionCreate, db: SessionDep, user: CurrentUser
 ):
     pf = await get_owned_portfolio(db, user, portfolio_id)
+    symbol = body.symbol.strip().upper()
     inst = (
-        await db.execute(select(Instrument).where(Instrument.symbol == body.symbol))
+        await db.execute(select(Instrument).where(Instrument.symbol == symbol))
     ).scalar_one_or_none()
     if inst is None:
-        raise HTTPException(status_code=422, detail=f"Unknown symbol {body.symbol}")
+        raise HTTPException(status_code=422, detail=f"Unknown symbol {symbol}")
+    existing = (
+        await db.execute(
+            select(Position).where(
+                Position.portfolio_id == pf.id, Position.instrument_id == inst.id
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{symbol} is already in this portfolio — edit the existing position",
+        )
     pos = Position(
         portfolio_id=pf.id,
         instrument_id=inst.id,

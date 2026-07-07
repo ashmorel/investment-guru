@@ -47,6 +47,7 @@ async def portfolio_valuation(
     pf = await get_owned_portfolio(db, user, portfolio_id)
     quote_service, fx = services
     summary = await value_portfolio(db, pf, quote_service, fx)
+    await db.commit()
     return {
         "portfolio_id": summary.portfolio_id,
         "base_currency": summary.base_currency,
@@ -98,4 +99,5 @@ async def dashboard(
                 total_pnl_pct=_s(summary.total_pnl_pct),
             )
         )
+    await db.commit()
     return DashboardOut(portfolios=out, as_of=datetime.now(UTC))

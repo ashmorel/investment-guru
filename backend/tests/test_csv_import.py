@@ -33,3 +33,9 @@ def test_non_finite_decimals_yield_none():
     row = rows[0]
     assert row.quantity is None
     assert row.purchase_price is None
+
+
+def test_symbol_normalised_to_uppercase():
+    csv_bytes = b"Symbol,Quantity,Purchase Price,Comment\n aapl ,10,150.25,\n"
+    rows = parse_yahoo_csv(csv_bytes)
+    assert rows[0].symbol == "AAPL"

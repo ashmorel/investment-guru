@@ -2,8 +2,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import Money from "../components/Money";
-import { apiFetch } from "../lib/api";
+import { apiFetch, ApiError } from "../lib/api";
 import type { PortfolioValuation, Position } from "../lib/types";
+
+// Only the position-conflict (409) response has a detail worth surfacing
+// verbatim — lookup failures (404) keep the friendlier fallback copy below.
+function conflictDetail(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null;
+  try {
+    const body = JSON.parse(err.message) as { detail?: unknown };
+    return typeof body.detail === "string" ? body.detail : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function PortfolioDetailPage() {
   const { id } = useParams();
@@ -37,7 +49,10 @@ export default function PortfolioDetailPage() {
       setAddError(null);
       qc.invalidateQueries({ queryKey: ["valuation", id] });
     },
-    onError: () => setAddError(`Could not add ${symbol} — symbol not recognised.`),
+    onError: (err) => {
+      const detail = conflictDetail(err);
+      setAddError(detail ?? `Could not add ${symbol} — symbol not recognised.`);
+    },
   });
 
   const removePosition = useMutation({

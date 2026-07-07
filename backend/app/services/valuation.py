@@ -47,7 +47,7 @@ class FxService:
                 raise LookupError(f"No FX rate available for {pair}") from None
             return fallback.rate
         db.add(FxRate(pair=pair, date=today, rate=rate))
-        await db.commit()
+        await db.flush()
         return rate
 
 

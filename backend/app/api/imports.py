@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 
 async def _resolve_instrument(db, provider, symbol: str) -> Instrument | None:
+    symbol = symbol.strip().upper()
     inst = (
         await db.execute(select(Instrument).where(Instrument.symbol == symbol))
     ).scalar_one_or_none()

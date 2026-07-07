@@ -42,6 +42,36 @@ async def test_unknown_symbol_rejected(auth_client):
     assert resp.status_code == 422
 
 
+async def test_duplicate_position_in_same_portfolio_rejected(auth_client, make_instrument):
+    await make_instrument("AAPL")
+    pid = await _make_portfolio(auth_client)
+    first = await auth_client.post(
+        f"/api/portfolios/{pid}/positions",
+        json={"symbol": "AAPL", "quantity": "10", "avg_cost": "150.25"},
+    )
+    assert first.status_code == 201
+
+    dupe = await auth_client.post(
+        f"/api/portfolios/{pid}/positions",
+        json={"symbol": "AAPL", "quantity": "5", "avg_cost": "100"},
+    )
+    assert dupe.status_code == 409
+    assert dupe.json()["detail"] == (
+        "AAPL is already in this portfolio — edit the existing position"
+    )
+
+
+async def test_symbol_normalised_on_create(auth_client, make_instrument):
+    await make_instrument("AAPL")
+    pid = await _make_portfolio(auth_client)
+    resp = await auth_client.post(
+        f"/api/portfolios/{pid}/positions",
+        json={"symbol": " aapl ", "quantity": "1"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["symbol"] == "AAPL"
+
+
 async def test_watchlist_entry_without_quantity(auth_client, make_instrument):
     await make_instrument("0700.HK", market="HK", currency="HKD")
     pid = await _make_portfolio(auth_client, kind="watchlist")

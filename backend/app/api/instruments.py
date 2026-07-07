@@ -34,6 +34,7 @@ async def lookup(
     user: CurrentUser,
     provider: Annotated[MarketDataProvider, Depends(get_provider)],
 ) -> InstrumentOut:
+    symbol = symbol.strip().upper()
     existing = (
         await db.execute(select(Instrument).where(Instrument.symbol == symbol))
     ).scalar_one_or_none()
