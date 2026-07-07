@@ -50,3 +50,19 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+from app.core.security import hash_password  # noqa: E402
+from app.models.user import User  # noqa: E402
+
+
+@pytest_asyncio.fixture
+async def auth_client(client, db_session) -> httpx.AsyncClient:
+    user = User(email="lee@test.dev", password_hash=hash_password("pw123456"))
+    db_session.add(user)
+    await db_session.commit()
+    resp = await client.post(
+        "/api/auth/login", json={"email": "lee@test.dev", "password": "pw123456"}
+    )
+    assert resp.status_code == 204
+    return client
