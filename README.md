@@ -3,6 +3,9 @@
 Personal portfolio management with an AI adviser (US/UK/HK markets) and HK ORSO fund tracking.
 Spec: `docs/superpowers/specs/2026-07-07-investment-guru-design.md`.
 
+## Status
+Phase 1 (portfolio core) complete — portfolios/watchlists, Yahoo CSV import, live multi-currency valuation, dashboard. Next: Phase 2, the Guru (see spec). Progress detail: `docs/PROGRESS.md`.
+
 ## Local setup
 ```bash
 docker compose up -d db

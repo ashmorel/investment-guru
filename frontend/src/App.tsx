@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { apiFetch } from "./lib/api";
+import DashboardPage from "./pages/DashboardPage";
 import ImportWizardPage from "./pages/ImportWizardPage";
 import LoginPage from "./pages/LoginPage";
 import PortfolioDetailPage from "./pages/PortfolioDetailPage";
@@ -70,7 +71,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
-            <Route path="/" element={<div>Dashboard (Task 15)</div>} />
+            <Route path="/" element={<DashboardPage />} />
             <Route path="/portfolios" element={<PortfoliosPage />} />
             <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
             <Route path="/import" element={<ImportWizardPage />} />
