@@ -91,6 +91,7 @@ One versioned system prompt: world-class investment adviser, deep US/UK/HK exper
 - **Portfolio review (on-demand):** per-position verdict (hold/increase/reduce/exit + conviction + rationale), portfolio-level observations (concentration, currency exposure, profile fit), "what to watch next". Stored versioned.
 - **Daily digest (scheduled):** morning scan → earnings this week, overnight movers, flagged news, one-line Guru commentary per flag. Cheap model, short output.
 - **Chat:** threads with profile + selected portfolio snapshot + latest signals injected as context.
+- **Dashboard commentary ("Guru's take", added at design review 2026-07-07):** a persistent dashboard panel with portfolio-level commentary — what moved and why, key risks (earnings proximity, concentration vs profile, FX exposure), and rebalance ideas (trim/add/hold + conviction + one-line rationale). Refreshed with the daily digest; each idea links into chat. Ships with Phase 2 (needs the LLM); Phase 1 reserves the panel slot with a placeholder.
 
 ## 5. ORSO environment (Phase 4 — shape fixed now, detailed design later)
 
