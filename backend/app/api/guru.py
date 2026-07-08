@@ -1,13 +1,17 @@
+import json as _json
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.portfolios import get_owned_portfolio
-from app.models import GuruReport, InvestorProfile
+from app.models import ChatMessage, ChatThread, GuruReport, InvestorProfile, LlmUsage
+from app.services.guru.chat import ChatService
 from app.services.guru.llm.base import LLMError, LLMNotConfigured
 from app.services.guru.service import GenerationInProgress, GuruService, get_guru_service
 
@@ -161,3 +165,144 @@ async def create_take(db: SessionDep, user: CurrentUser, guru: GuruDep):
     with map_guru_errors():
         report = await guru.generate_take(db, user)
     return _report_out(report)
+
+
+class ThreadOut(BaseModel):
+    id: int
+    title: str
+    portfolio_id: int | None
+    created_at: str
+
+
+class ThreadList(BaseModel):
+    threads: list[ThreadOut]
+
+
+class ThreadCreate(BaseModel):
+    title: str
+    portfolio_id: int | None = None
+    seed_context: dict | None = None
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: str
+
+
+class ThreadDetail(ThreadOut):
+    messages: list[ChatMessageOut]
+
+
+class ChatMessageIn(BaseModel):
+    content: str
+
+
+def _thread_out(t: ChatThread) -> ThreadOut:
+    return ThreadOut(id=t.id, title=t.title, portfolio_id=t.portfolio_id,
+                     created_at=t.created_at.isoformat())
+
+
+def _message_out(m: ChatMessage) -> ChatMessageOut:
+    return ChatMessageOut(id=m.id, role=m.role, content=m.content,
+                          created_at=m.created_at.isoformat())
+
+
+async def _get_owned_thread(db: SessionDep, user: CurrentUser, thread_id: int) -> ChatThread:
+    thread = await db.get(ChatThread, thread_id)
+    if thread is None or thread.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    return thread
+
+
+@router.get("/chat/threads", response_model=ThreadList)
+async def list_threads(db: SessionDep, user: CurrentUser):
+    rows = (await db.execute(
+        select(ChatThread).where(ChatThread.user_id == user.id)
+        .order_by(ChatThread.created_at.desc(), ChatThread.id.desc())
+    )).scalars().all()
+    return ThreadList(threads=[_thread_out(t) for t in rows])
+
+
+@router.post("/chat/threads", response_model=ThreadOut, status_code=201)
+async def create_thread(body: ThreadCreate, db: SessionDep, user: CurrentUser):
+    if body.portfolio_id is not None:
+        await get_owned_portfolio(db, user, body.portfolio_id)
+    thread = ChatThread(user_id=user.id, title=body.title, portfolio_id=body.portfolio_id,
+                        seed_context=body.seed_context)
+    db.add(thread)
+    await db.commit()
+    await db.refresh(thread)
+    return _thread_out(thread)
+
+
+@router.get("/chat/threads/{thread_id}", response_model=ThreadDetail)
+async def read_thread(thread_id: int, db: SessionDep, user: CurrentUser):
+    thread = await _get_owned_thread(db, user, thread_id)
+    rows = (await db.execute(
+        select(ChatMessage).where(ChatMessage.thread_id == thread.id)
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+    )).scalars().all()
+    return ThreadDetail(**_thread_out(thread).model_dump(),
+                        messages=[_message_out(m) for m in rows])
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {_json.dumps(data)}\n\n"
+
+
+@router.post("/chat/threads/{thread_id}/messages")
+async def post_chat_message(thread_id: int, body: ChatMessageIn, db: SessionDep,
+                            user: CurrentUser, guru: GuruDep):
+    thread = await _get_owned_thread(db, user, thread_id)
+    chat = ChatService(guru)
+    with map_guru_errors():
+        # Awaiting here (rather than merely calling stream_turn) forces the eager
+        # provider check to run now, so LLMNotConfigured is mapped to 503 before the
+        # StreamingResponse — and its 200 status line — is ever returned.
+        gen = await chat.stream_turn(db, user, thread, body.content)
+
+    async def event_source():
+        async for frame in gen:
+            yield _sse(frame["event"], frame["data"])
+
+    return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+class UsageByMode(BaseModel):
+    mode: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    est_cost_usd: str | None
+
+
+class UsageSummary(BaseModel):
+    by_mode: list[UsageByMode]
+    total_cost_30d: str | None
+
+
+@router.get("/usage/summary", response_model=UsageSummary)
+async def usage_summary(db: SessionDep, user: CurrentUser):
+    rows = (await db.execute(
+        select(LlmUsage.mode, func.count(), func.sum(LlmUsage.input_tokens),
+              func.sum(LlmUsage.output_tokens), func.sum(LlmUsage.est_cost_usd))
+        .where(LlmUsage.user_id == user.id)
+        .group_by(LlmUsage.mode)
+    )).all()
+    by_mode = [
+        UsageByMode(mode=mode, calls=calls, input_tokens=int(in_tok or 0),
+                   output_tokens=int(out_tok or 0),
+                   est_cost_usd=str(cost) if cost is not None else None)
+        for mode, calls, in_tok, out_tok, cost in rows
+    ]
+
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+    total_30d = (await db.execute(
+        select(func.sum(LlmUsage.est_cost_usd)).where(
+            LlmUsage.user_id == user.id, LlmUsage.created_at >= cutoff)
+    )).scalar_one_or_none()
+
+    return UsageSummary(by_mode=by_mode,
+                        total_cost_30d=str(total_30d) if total_30d is not None else None)
