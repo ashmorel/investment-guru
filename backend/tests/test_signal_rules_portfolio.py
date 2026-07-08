@@ -105,7 +105,8 @@ def test_sector_boundary_watch_and_high():
             _PV("D", Decimal("50")),    # Misc 5% -> no sector signal
         ],
     )
-    secs = {s.data["sector"]: s.severity for s in _sector_drafts(concentration(_ctx(summary, insts)))}
+    sec_drafts = _sector_drafts(concentration(_ctx(summary, insts)))
+    secs = {s.data["sector"]: s.severity for s in sec_drafts}
     assert secs == {"Tech": "watch", "Fin": "high"}
 
 
