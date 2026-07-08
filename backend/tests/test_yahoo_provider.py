@@ -34,6 +34,27 @@ def test_parse_quote_missing_price_returns_none():
     assert parse_quote("AAPL", {"currency": "USD"}) is None
 
 
+def test_parse_quote_nan_price_returns_none():
+    # yfinance can return a NaN regularMarketPrice; treat it as no quote so
+    # downstream Decimal arithmetic never hits decimal.InvalidOperation.
+    assert parse_quote("AAPL", {"regularMarketPrice": float("nan"), "currency": "USD"}) is None
+
+
+def test_parse_quote_nan_previous_close_drops_prev_keeps_quote():
+    # A NaN previous_close must not crash: keep the (finite) price, drop prev.
+    q = parse_quote(
+        "AAPL",
+        {
+            "regularMarketPrice": 231.55,
+            "regularMarketPreviousClose": float("nan"),
+            "currency": "USD",
+        },
+    )
+    assert q is not None
+    assert q.price == Decimal("231.55")
+    assert q.previous_close is None
+
+
 def test_infer_market():
     assert infer_market("AAPL") == "US"
     assert infer_market("HSBA.L") == "UK"

@@ -10,14 +10,18 @@ from app.services.market_data.base import Bar, InstrumentInfo, Quote, infer_mark
 def parse_quote(symbol: str, info: dict) -> Quote | None:
     price = info.get("regularMarketPrice")
     currency = info.get("currency")
-    if price is None or currency is None:
+    # A non-finite (NaN/Inf) price is no usable quote: dropping it here keeps a
+    # Decimal('NaN') out of price_move_day / fifty_two_week arithmetic. Mirror
+    # parse_history's finite guard rather than only checking None.
+    if not _is_finite_number(price) or currency is None:
         return None
     prev = info.get("regularMarketPreviousClose")
     return Quote(
         symbol=symbol,
         price=Decimal(str(price)),
         currency=currency,
-        previous_close=None if prev is None else Decimal(str(prev)),
+        # A non-finite previous_close drops just the prev (keep the quote).
+        previous_close=Decimal(str(prev)) if _is_finite_number(prev) else None,
         as_of=datetime.now(UTC),
     )
 

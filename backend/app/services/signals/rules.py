@@ -131,7 +131,9 @@ def news_recent(ctx: SignalContext) -> list[SignalDraft]:
         top = items[0]
         out.append(SignalDraft(
             kind="news_recent", severity="info", instrument_id=inst.id,
-            title=f"{inst.symbol}: {top.title}",
+            # Bound to the Signal.title varchar(200): a real RSS headline can be
+            # ~500 chars, which would overflow the column and 500 the analyze run.
+            title=f"{inst.symbol}: {top.title}"[:200],
             detail=f"{len(items)} recent headline{'s' if len(items) != 1 else ''}",
             data={"count": str(len(items)), "url": top.url},
         ))

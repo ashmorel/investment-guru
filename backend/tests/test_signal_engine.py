@@ -42,6 +42,20 @@ class FakeNews:
         return []
 
 
+class FakeNewsWithItem:
+    """Returns a single news item with a caller-supplied title so a rule persist
+    can be driven end-to-end (refresh → recent_news → news_recent → DB)."""
+
+    def __init__(self, title: str):
+        self._title = title
+
+    async def get_news(self, symbol):
+        from app.services.market_data.news import NewsDTO
+
+        return [NewsDTO(title=self._title[:500], source="Fake",
+                        url=f"https://example.test/{symbol}", published_at=None)]
+
+
 def _q(sym, price, prev):
     return Quote(symbol=sym, price=Decimal(str(price)), currency="USD",
                  previous_close=Decimal(str(prev)), as_of=datetime.now(UTC))
@@ -122,6 +136,49 @@ async def test_analyze_ignores_persisted_nan_bars(db_session, make_instrument):
     await db_session.commit()
     # must not raise, and the NaN bar must not produce a bogus signal
     assert "price_move_week" not in {s.kind for s in result.signals}
+
+
+async def test_news_signal_title_fits_column_and_analyze_succeeds(db_session, make_instrument):
+    """A real RSS headline can be ~500 chars; news_recent builds a Signal.title of
+    "<symbol>: <headline>", which overflows the varchar(200) column and makes the
+    flush (and thus analyze) 500. The title must be bounded to <=200 so analyze
+    succeeds and the persisted row fits its column."""
+    pf, inst = await _make_pf(db_session, make_instrument)
+    long_title = "A" * 400  # well over the 200-char Signal.title column
+    market = FakeMarket(quotes={"AAPL": _q("AAPL", 100, 100)})
+    result = await _engine(market, news=FakeNewsWithItem(long_title)).analyze(db_session, pf)
+    await db_session.commit()
+
+    news_sigs = [s for s in result.signals if s.kind == "news_recent"]
+    assert news_sigs, "expected a news_recent signal"
+    assert all(len(s.title) <= 200 for s in news_sigs)
+    stored = (await db_session.execute(
+        select(Signal).where(Signal.portfolio_id == pf.id, Signal.kind == "news_recent")
+    )).scalars().all()
+    assert stored and all(len(s.title) <= 200 for s in stored)
+
+
+async def test_one_raising_rule_does_not_abort_the_run(db_session, make_instrument, monkeypatch):
+    """Spec §2: each rule fails in isolation. If a single rule raises, its drafts
+    are dropped but the run completes and the other rules' signals still persist."""
+    from app.services.signals import engine as engine_mod
+
+    def boom(ctx):
+        raise RuntimeError("rule exploded")
+
+    # earnings_upcoming will fire (earnings today); boom is a broken rule alongside it.
+    monkeypatch.setattr(engine_mod, "ALL_RULES", [boom, *engine_mod.ALL_RULES])
+
+    pf, inst = await _make_pf(db_session, make_instrument)
+    market = FakeMarket(quotes={"AAPL": _q("AAPL", 88, 100)},  # -12% day move
+                        earnings={"AAPL": date.today()})
+    result = await _engine(market).analyze(db_session, pf)
+    await db_session.commit()
+
+    kinds = {s.kind for s in result.signals}
+    # the good rules still produced signals despite boom raising
+    assert "price_move_day" in kinds
+    assert "earnings_upcoming" in kinds
 
 
 async def test_provider_failure_is_isolated(db_session, make_instrument):

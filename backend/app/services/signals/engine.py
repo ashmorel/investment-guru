@@ -107,9 +107,16 @@ class SignalEngine:
             portfolio=portfolio, summary=summary, quotes=quotes, bars=bars,
             earnings=earnings, news=news_map, instruments=instruments, today=date.today(),
         )
+        # Spec §2: each rule fails in isolation. A single rule raising must not
+        # abort the run — drop its drafts and continue so the other rules'
+        # signals still persist. (The flush below is intentionally NOT wrapped:
+        # a persist error signals a corrupt snapshot and must surface.)
         drafts = []
         for rule in ALL_RULES:
-            drafts.extend(rule(ctx))
+            try:
+                drafts.extend(rule(ctx))
+            except Exception:
+                continue
 
         # replace snapshot transactionally: delete the portfolio's existing signals, then
         # insert the fresh set, all stamped with one computed_at.
