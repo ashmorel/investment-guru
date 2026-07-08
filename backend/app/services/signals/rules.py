@@ -142,3 +142,71 @@ PER_INSTRUMENT_RULES = [
     earnings_upcoming, price_move_day, price_move_week,
     fifty_two_week, unusual_volume, news_recent,
 ]
+
+
+def concentration(ctx: SignalContext) -> list[SignalDraft]:
+    s = ctx.summary
+    if s is None or not s.total_value or s.total_value == 0:
+        return []
+    total = s.total_value
+    sector_by_symbol = {i.symbol: (i.sector or "Unclassified") for i in ctx.instruments}
+    out = []
+    # single-name
+    for pv in s.positions:
+        if pv.market_value_base is None:
+            continue
+        pct = _round(pv.market_value_base / total * 100)
+        if pct < config.CONC_NAME_PCT:
+            continue
+        sev = "high" if pct >= config.CONC_NAME_HIGH_PCT else "watch"
+        out.append(SignalDraft(
+            kind="concentration", severity=sev, instrument_id=None,
+            title=f"{pv.symbol} is {pct}% of portfolio",
+            detail=f"Single-name concentration {pct}%",
+            data={"symbol": pv.symbol, "pct": str(pct), "scope": "name"},
+        ))
+    # sector
+    sector_totals: dict[str, Decimal] = {}
+    for pv in s.positions:
+        if pv.market_value_base is None:
+            continue
+        sec = sector_by_symbol.get(pv.symbol, "Unclassified")
+        sector_totals[sec] = sector_totals.get(sec, Decimal("0")) + pv.market_value_base
+    for sec, val in sector_totals.items():
+        pct = _round(val / total * 100)
+        if pct < config.CONC_SECTOR_PCT:
+            continue
+        sev = "high" if pct >= config.CONC_SECTOR_HIGH_PCT else "watch"
+        out.append(SignalDraft(
+            kind="concentration", severity=sev, instrument_id=None,
+            title=f"{sec} sector is {pct}% of portfolio",
+            detail=f"Sector concentration {pct}%",
+            data={"sector": sec, "pct": str(pct), "scope": "sector"},
+        ))
+    return out
+
+
+def fx_exposure(ctx: SignalContext) -> list[SignalDraft]:
+    s = ctx.summary
+    if s is None or not s.total_value or s.total_value == 0:
+        return []
+    base = ctx.portfolio.base_currency
+    out = []
+    for ccy, val in s.currency_exposure.items():
+        if ccy == base:
+            continue
+        pct = _round(val / s.total_value * 100)
+        if pct < config.FX_PCT:
+            continue
+        sev = "high" if pct >= config.FX_HIGH_PCT else "watch"
+        out.append(SignalDraft(
+            kind="fx_exposure", severity=sev, instrument_id=None,
+            title=f"{pct}% exposure to {ccy}",
+            detail=f"Non-base ({base}) currency exposure to {ccy}",
+            data={"currency": ccy, "pct": str(pct)},
+        ))
+    return out
+
+
+PORTFOLIO_RULES = [concentration, fx_exposure]
+ALL_RULES = PER_INSTRUMENT_RULES + PORTFOLIO_RULES
