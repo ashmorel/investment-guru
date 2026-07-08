@@ -140,3 +140,21 @@ def make_instrument(db_session):
         return await _make_instrument(db_session, symbol, **overrides)
 
     return _factory
+
+
+@pytest_asyncio.fixture
+def fake_llm():
+    from app.services.guru.llm.fake import FakeLLMProvider
+
+    return FakeLLMProvider()
+
+
+@pytest_asyncio.fixture
+async def guru_client(auth_client, fake_llm) -> httpx.AsyncClient:
+    from app.api.guru import get_guru
+    from app.services.guru.service import GuruService
+
+    svc = GuruService(fake_llm, *(_test_services()))
+    auth_client.app.dependency_overrides[get_guru] = lambda: svc
+    auth_client.fake_llm = fake_llm
+    return auth_client

@@ -1,13 +1,36 @@
-from typing import Literal
+from contextlib import contextmanager
+from typing import Annotated, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import InvestorProfile
+from app.api.portfolios import get_owned_portfolio
+from app.models import GuruReport, InvestorProfile
+from app.services.guru.llm.base import LLMError, LLMNotConfigured
+from app.services.guru.service import GenerationInProgress, GuruService, get_guru_service
 
 router = APIRouter(prefix="/api/guru", tags=["guru"])
+
+
+def get_guru() -> GuruService:
+    return get_guru_service()
+
+
+GuruDep = Annotated[GuruService, Depends(get_guru)]
+
+
+@contextmanager
+def map_guru_errors():
+    try:
+        yield
+    except LLMNotConfigured:
+        raise HTTPException(status_code=503, detail="llm_unconfigured") from None
+    except GenerationInProgress:
+        raise HTTPException(status_code=409, detail="generation_in_progress") from None
+    except LLMError:
+        raise HTTPException(status_code=502, detail="llm_error") from None
 
 
 class ProfileOut(BaseModel):
@@ -52,3 +75,56 @@ async def write_profile(body: ProfileIn, db: SessionDep, user: CurrentUser):
     row.free_text = body.free_text
     await db.commit()
     return ProfileOut(**body.model_dump())
+
+
+class ReportOut(BaseModel):
+    id: int
+    kind: str
+    portfolio_id: int | None
+    payload: dict
+    model: str
+    created_at: str
+
+
+def _report_out(r: GuruReport) -> ReportOut:
+    return ReportOut(id=r.id, kind=r.kind, portfolio_id=r.portfolio_id,
+                     payload=r.payload, model=r.model,
+                     created_at=r.created_at.isoformat())
+
+
+class ReviewRequest(BaseModel):
+    portfolio_id: int
+
+
+@router.post("/reviews", response_model=ReportOut, status_code=201)
+async def create_review(body: ReviewRequest, db: SessionDep, user: CurrentUser, guru: GuruDep):
+    pf = await get_owned_portfolio(db, user, body.portfolio_id)
+    with map_guru_errors():
+        report = await guru.generate_review(db, user, pf)
+    return _report_out(report)
+
+
+class ReviewList(BaseModel):
+    reviews: list[ReportOut]
+
+
+@router.get("/reviews", response_model=ReviewList)
+async def list_reviews(db: SessionDep, user: CurrentUser,
+                       portfolio_id: int | None = None, limit: int = 20):
+    q = (select(GuruReport)
+         .where(GuruReport.user_id == user.id, GuruReport.kind == "review")
+         .order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(limit))
+    if portfolio_id is not None:
+        q = q.where(GuruReport.portfolio_id == portfolio_id)
+    rows = (await db.execute(q)).scalars().all()
+    return ReviewList(reviews=[_report_out(r) for r in rows])
+
+
+@router.get("/reviews/{report_id}", response_model=ReportOut)
+async def read_review(report_id: int, db: SessionDep, user: CurrentUser):
+    r = (await db.execute(select(GuruReport).where(
+        GuruReport.id == report_id, GuruReport.user_id == user.id,
+        GuruReport.kind == "review"))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _report_out(r)
