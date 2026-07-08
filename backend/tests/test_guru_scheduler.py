@@ -184,3 +184,43 @@ async def test_catch_up_regenerates_missing_take_only(db_session, fake_llm, monk
     kinds = sorted(r.kind for r in rows)
     assert kinds == ["digest", "take"]
     assert len(fake_llm.calls) == 1
+
+
+async def test_catch_up_take_failure_never_raises(db_session, fake_llm, monkeypatch, caplog):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import catch_up
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+    fake_llm.fail_structured = 1
+
+    user = await _make_user(db_session, "takefailcatchup@test.dev")
+    db_session.add(GuruReport(
+        user_id=user.id, kind="digest", portfolio_id=None,
+        payload={}, model="x", created_at=datetime.now(UTC).replace(tzinfo=None)))
+    await db_session.commit()
+
+    with caplog.at_level(logging.INFO, logger="app.services.guru.scheduler"):
+        await catch_up(session_factory=TestSession)
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest"]
+    assert "guru scheduler: catch-up take failed" in caplog.text
+
+
+async def test_catch_up_runs_full_job_when_digest_missing(db_session, fake_llm, monkeypatch):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import catch_up
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+
+    await _make_user(db_session, "fullcatchup@test.dev")
+    fake_llm.structured_queue.append(_digest())
+    fake_llm.structured_queue.append(_take())
+
+    await catch_up(session_factory=TestSession)
+
+    assert len(fake_llm.calls) == 2
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest", "take"]
