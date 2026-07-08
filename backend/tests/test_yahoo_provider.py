@@ -2,8 +2,14 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from app.services.market_data.base import infer_market
-from app.services.market_data.yahoo import parse_instrument_info, parse_quote
+from app.services.market_data.yahoo import (
+    YahooProvider,
+    parse_instrument_info,
+    parse_quote,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -53,6 +59,28 @@ def test_parse_quote_nan_previous_close_drops_prev_keeps_quote():
     assert q is not None
     assert q.price == Decimal("231.55")
     assert q.previous_close is None
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_fx_rate_non_finite_raises_lookup(monkeypatch):
+    # A NaN live FX rate must be treated as "no rate" (raise) rather than returned
+    # as Decimal('NaN'): FxService catches LookupError and falls back to the last
+    # cached rate instead of persisting NaN, which would later blow up valuation.
+    provider = YahooProvider()
+    monkeypatch.setattr(
+        provider, "_fetch_info", lambda _sym: {"regularMarketPrice": float("nan")}
+    )
+    with pytest.raises(LookupError):
+        await provider.get_fx_rate("USD", "GBP")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_fx_rate_finite_returns_decimal(monkeypatch):
+    provider = YahooProvider()
+    monkeypatch.setattr(
+        provider, "_fetch_info", lambda _sym: {"regularMarketPrice": 0.79}
+    )
+    assert await provider.get_fx_rate("USD", "GBP") == Decimal("0.79")
 
 
 def test_infer_market():

@@ -110,7 +110,11 @@ class YahooProvider:
             return Decimal("1")
         info = await asyncio.to_thread(self._fetch_info, f"{base}{quote}=X")
         price = info.get("regularMarketPrice")
-        if price is None:
+        # A non-finite (None/NaN/Inf) rate is treated as "no live rate": raising here
+        # lets FxService fall back to the last cached rate instead of persisting a
+        # Decimal('NaN') that later blows up valuation arithmetic (same class as the
+        # non-finite guards in parse_quote/parse_history).
+        if not _is_finite_number(price):
             raise LookupError(f"No FX rate for {base}{quote}")
         return Decimal(str(price))
 
