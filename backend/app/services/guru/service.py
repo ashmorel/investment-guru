@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -11,7 +12,7 @@ from app.services.guru.context import build_context
 from app.services.guru.llm.anthropic import AnthropicProvider
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
-from app.services.guru.schemas import ReviewPayload
+from app.services.guru.schemas import DigestPayload, ReviewPayload, TakePayload
 from app.services.market_data.quotes import QuoteService
 from app.services.valuation import FxService
 
@@ -89,11 +90,58 @@ class GuruService:
             await db.commit()
             return report
 
+    async def _all_portfolios(self, db: AsyncSession, user: User) -> list[Portfolio]:
+        return (await db.execute(
+            select(Portfolio).where(Portfolio.user_id == user.id).order_by(Portfolio.id)
+        )).scalars().all()
+
+    async def _generate_global(self, db: AsyncSession, user: User, *, kind: str, schema,
+                               model: str, instruction: str,
+                               extra_context: str = "") -> GuruReport:
+        provider = self._require_provider()
+        lock = self._lock(kind)
+        if lock.locked():
+            raise GenerationInProgress(kind)
+        async with lock:
+            profile = await self._profile(db, user)
+            portfolios = await self._all_portfolios(db, user)
+            ctx = await build_context(db, user, quote_service=self.quotes, fx=self.fx,
+                                      portfolios=portfolios, profile=profile)
+            content = instruction + "\n\n" + json.dumps(ctx) + extra_context
+            payload, usage = await provider.generate_structured(
+                system=PERSONA_V1, messages=[{"role": "user", "content": content}],
+                schema=schema, model=model, max_tokens=2048)
+            report = GuruReport(user_id=user.id, kind=kind, portfolio_id=None,
+                                payload=payload.model_dump(), model=model, created_at=_now())
+            db.add(report)
+            await db.flush()
+            await usage_mod.record_usage(db, user_id=user.id, mode=kind, model=model,
+                                         usage=usage, report_id=report.id)
+            await db.commit()
+            return report
+
+    async def _latest_digest(self, db: AsyncSession, user: User) -> GuruReport | None:
+        return (await db.execute(
+            select(GuruReport).where(GuruReport.user_id == user.id, GuruReport.kind == "digest")
+            .order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(1)
+        )).scalar_one_or_none()
+
     async def generate_digest(self, db: AsyncSession, user: User) -> GuruReport:
-        raise NotImplementedError  # Task 7
+        return await self._generate_global(
+            db, user, kind="digest", schema=DigestPayload, model=settings.guru_scan_model,
+            instruction="Produce this morning's digest: earnings this week, notable movers, "
+                        "flagged news. One-line commentary per item.")
 
     async def generate_take(self, db: AsyncSession, user: User) -> GuruReport:
-        raise NotImplementedError  # Task 7
+        digest = await self._latest_digest(db, user)
+        extra_context = (
+            "\n\nLatest daily digest:\n" + json.dumps(digest.payload)
+            if digest is not None else "")
+        return await self._generate_global(
+            db, user, kind="take", schema=TakePayload, model=settings.guru_advice_model,
+            instruction="Give your portfolio-level take: what moved and why, key risks vs the "
+                        "investor's profile, and rebalance ideas with conviction.",
+            extra_context=extra_context)
 
 
 _service: GuruService | None = None

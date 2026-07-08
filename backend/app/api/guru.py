@@ -128,3 +128,36 @@ async def read_review(report_id: int, db: SessionDep, user: CurrentUser):
     if r is None:
         raise HTTPException(status_code=404, detail="Not found")
     return _report_out(r)
+
+
+async def _latest(db, user, kind: str) -> ReportOut:
+    r = (await db.execute(select(GuruReport).where(
+        GuruReport.user_id == user.id, GuruReport.kind == kind
+    ).order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(1))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _report_out(r)
+
+
+@router.get("/digest/latest", response_model=ReportOut)
+async def read_latest_digest(db: SessionDep, user: CurrentUser):
+    return await _latest(db, user, "digest")
+
+
+@router.post("/digest", response_model=ReportOut, status_code=201)
+async def create_digest(db: SessionDep, user: CurrentUser, guru: GuruDep):
+    with map_guru_errors():
+        report = await guru.generate_digest(db, user)
+    return _report_out(report)
+
+
+@router.get("/take/latest", response_model=ReportOut)
+async def read_latest_take(db: SessionDep, user: CurrentUser):
+    return await _latest(db, user, "take")
+
+
+@router.post("/take", response_model=ReportOut, status_code=201)
+async def create_take(db: SessionDep, user: CurrentUser, guru: GuruDep):
+    with map_guru_errors():
+        report = await guru.generate_take(db, user)
+    return _report_out(report)
