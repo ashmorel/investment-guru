@@ -4,7 +4,13 @@ import { useParams } from "react-router-dom";
 import Money from "../components/Money";
 import SignalBadges from "../components/SignalBadges";
 import { apiFetch, ApiError } from "../lib/api";
-import type { PortfolioValuation, Position, Signal, SignalsResponse } from "../lib/types";
+import type {
+  AnalyzeResponse,
+  PortfolioValuation,
+  Position,
+  Signal,
+  SignalsResponse,
+} from "../lib/types";
 
 // Only the position-conflict (409) response has a detail worth surfacing
 // verbatim — lookup failures (404) keep the friendlier fallback copy below.
@@ -30,9 +36,12 @@ export default function PortfolioDetailPage() {
     queryFn: () => apiFetch<SignalsResponse>(`/api/portfolios/${id}/signals`),
   });
 
+  const [unavailable, setUnavailable] = useState<string[]>([]);
   const runAnalysis = useMutation({
-    mutationFn: () => apiFetch(`/api/portfolios/${id}/analyze`, { method: "POST" }),
-    onSuccess: () => {
+    mutationFn: () =>
+      apiFetch<AnalyzeResponse>(`/api/portfolios/${id}/analyze`, { method: "POST" }),
+    onSuccess: (res) => {
+      setUnavailable(res.unavailable_inputs);
       qc.invalidateQueries({ queryKey: ["signals", id] });
       qc.invalidateQueries({ queryKey: ["valuation", id] });
       qc.invalidateQueries({ queryKey: ["attention"] });
@@ -110,6 +119,11 @@ export default function PortfolioDetailPage() {
           </button>
         </div>
       </div>
+      {unavailable.length > 0 && (
+        <p className="rounded-md bg-[#FFFBEB] p-3 text-sm text-flag">
+          Some data was unavailable: {unavailable.join(", ")}. Signals may be incomplete.
+        </p>
+      )}
       {v.unpriced_positions > 0 && (
         <p className="rounded-md bg-[#FFFBEB] p-3 text-sm text-flag">
           {v.unpriced_positions} position(s) missing live prices — values may be incomplete.

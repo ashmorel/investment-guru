@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import AttentionPanel from "../components/AttentionPanel";
 import Money from "../components/Money";
 import { apiFetch } from "../lib/api";
-import type { DashboardData } from "../lib/types";
+import type { AnalyzeResponse, DashboardData } from "../lib/types";
 
 export default function DashboardPage() {
   const qc = useQueryClient();
@@ -12,16 +13,20 @@ export default function DashboardPage() {
     queryFn: () => apiFetch<DashboardData>("/api/dashboard"),
   });
 
+  const [unavailable, setUnavailable] = useState<string[]>([]);
   const runAnalysis = useMutation({
     mutationFn: async () => {
       const data = await apiFetch<DashboardData>("/api/dashboard");
-      await Promise.all(
+      const results = await Promise.all(
         data.portfolios.map((p) =>
-          apiFetch(`/api/portfolios/${p.id}/analyze`, { method: "POST" }),
+          apiFetch<AnalyzeResponse>(`/api/portfolios/${p.id}/analyze`, { method: "POST" }),
         ),
       );
+      // Union of unavailable inputs across every analyzed portfolio.
+      return [...new Set(results.flatMap((r) => r.unavailable_inputs))];
     },
-    onSuccess: () => {
+    onSuccess: (union) => {
+      setUnavailable(union);
       qc.invalidateQueries({ queryKey: ["attention"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -46,6 +51,11 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+      {unavailable.length > 0 && (
+        <p className="rounded-md bg-[#FFFBEB] p-3 text-sm text-flag">
+          Some data was unavailable: {unavailable.join(", ")}. Signals may be incomplete.
+        </p>
+      )}
       <AttentionPanel />
       {portfolios.length === 0 ? (
         <p className="rounded-xl bg-surface p-6 text-muted shadow">

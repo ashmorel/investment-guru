@@ -122,6 +122,40 @@ describe("PortfolioDetailPage", () => {
     expect(await screen.findByText(/symbol not recognised/i)).toBeInTheDocument();
   });
 
+  it("surfaces an unavailable-inputs notice after Run analysis reports a down feed", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/analyze") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            signals: [],
+            as_of: "2026-07-08T00:00:00Z",
+            unavailable_inputs: ["news"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/valuation")) {
+        return new Response(JSON.stringify(VALUATION), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /run analysis/i }));
+
+    expect(await screen.findByText(/some data was unavailable: news/i)).toBeInTheDocument();
+  });
+
   it("renders a badge for a position-scoped signal and excludes portfolio-level signals", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
