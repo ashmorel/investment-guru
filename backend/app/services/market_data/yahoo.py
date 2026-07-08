@@ -37,6 +37,16 @@ def parse_instrument_info(symbol: str, info: dict) -> InstrumentInfo | None:
     )
 
 
+def parse_earnings_date(info: dict) -> _date | None:
+    ts = info.get("earningsTimestamp")
+    if ts is not None:
+        return datetime.fromtimestamp(int(ts), tz=UTC).date()
+    iso = info.get("earnings_date")
+    if iso:
+        return _date.fromisoformat(iso)
+    return None
+
+
 def parse_history(rows: list[dict]) -> list[Bar]:
     bars: list[Bar] = []
     for r in rows:
@@ -109,3 +119,7 @@ class YahooProvider:
     async def get_history(self, symbol: str, days: int = 400) -> list[Bar]:
         rows = await asyncio.to_thread(self._fetch_history, symbol, days)
         return parse_history(rows)
+
+    async def get_earnings_date(self, symbol: str) -> _date | None:
+        info = await asyncio.to_thread(self._fetch_info, symbol)
+        return parse_earnings_date(info)
