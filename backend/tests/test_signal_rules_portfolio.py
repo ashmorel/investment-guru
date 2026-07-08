@@ -84,13 +84,17 @@ def test_single_name_boundary_watch_high_and_skip():
             _PV("TSLA", Decimal("199.9")), # 19.99%
         ],
     )
-    names = {s.data["symbol"]: s.severity for s in _name_drafts(concentration(_ctx(summary, insts)))}
+    drafts = _name_drafts(concentration(_ctx(summary, insts)))
+    names = {s.data["symbol"]: s.severity for s in drafts}
     assert names == {"AAPL": "watch", "MSFT": "high"}  # TSLA absent (below threshold)
 
 
 def test_sector_boundary_watch_and_high():
     # Tech = 40% exactly -> watch; Fin = 55% exactly -> high; total 1000.
-    insts = [_Inst(1, "A", "Tech"), _Inst(2, "B", "Fin"), _Inst(3, "C", "Fin"), _Inst(4, "D", "Misc")]
+    insts = [
+        _Inst(1, "A", "Tech"), _Inst(2, "B", "Fin"),
+        _Inst(3, "C", "Fin"), _Inst(4, "D", "Misc"),
+    ]
     summary = _Summary(
         total_value=Decimal("1000"),
         currency_exposure={"GBP": Decimal("1000")},
@@ -122,7 +126,8 @@ def test_fx_boundary_watch_high_and_zero_total_guard():
         currency_exposure={"GBP": Decimal("200"), "USD": Decimal("300"), "HKD": Decimal("500")},
         positions=[],
     )
-    fx = {s.data["currency"]: s.severity for s in fx_exposure(_ctx(summary, []))}
+    fx_drafts = fx_exposure(_ctx(summary, []))
+    fx = {s.data["currency"]: s.severity for s in fx_drafts}
     assert fx == {"USD": "watch", "HKD": "high"}
     # zero total_value never divides
     zero = _Summary(total_value=Decimal("0"), currency_exposure={"USD": Decimal("0")}, positions=[])
