@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import Money from "../components/Money";
+import SignalBadges from "../components/SignalBadges";
 import { apiFetch, ApiError } from "../lib/api";
-import type { PortfolioValuation, Position } from "../lib/types";
+import type { PortfolioValuation, Position, Signal, SignalsResponse } from "../lib/types";
 
 // Only the position-conflict (409) response has a detail worth surfacing
 // verbatim — lookup failures (404) keep the friendlier fallback copy below.
@@ -23,6 +24,19 @@ export default function PortfolioDetailPage() {
   const valuation = useQuery({
     queryKey: ["valuation", id],
     queryFn: () => apiFetch<PortfolioValuation>(`/api/portfolios/${id}/valuation`),
+  });
+  const signals = useQuery({
+    queryKey: ["signals", id],
+    queryFn: () => apiFetch<SignalsResponse>(`/api/portfolios/${id}/signals`),
+  });
+
+  const runAnalysis = useMutation({
+    mutationFn: () => apiFetch(`/api/portfolios/${id}/analyze`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["signals", id] });
+      qc.invalidateQueries({ queryKey: ["valuation", id] });
+      qc.invalidateQueries({ queryKey: ["attention"] });
+    },
   });
 
   const [symbol, setSymbol] = useState("");
@@ -65,20 +79,35 @@ export default function PortfolioDetailPage() {
   if (valuation.isError) return <p className="text-loss">Failed to load portfolio.</p>;
   const v = valuation.data;
 
+  const bySymbol: Record<string, Signal[]> = {};
+  for (const s of signals.data?.signals ?? []) {
+    if (!s.symbol) continue;
+    (bySymbol[s.symbol] ??= []).push(s);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold text-text">Portfolio</h1>
-        <div className="text-right">
-          <p className="text-2xl font-semibold">
-            <Money value={v.total_value} ccy={v.base_currency} />
-          </p>
-          <p className="text-sm">
-            Day: <Money value={v.day_change} ccy={v.base_currency} signed />
-            {" · "}P&L: <Money value={v.total_pnl} ccy={v.base_currency} signed /> (
-            <Money value={v.total_pnl_pct} signed />
-            %)
-          </p>
+        <div className="flex items-start gap-4">
+          <div className="text-right">
+            <p className="text-2xl font-semibold">
+              <Money value={v.total_value} ccy={v.base_currency} />
+            </p>
+            <p className="text-sm">
+              Day: <Money value={v.day_change} ccy={v.base_currency} signed />
+              {" · "}P&L: <Money value={v.total_pnl} ccy={v.base_currency} signed /> (
+              <Money value={v.total_pnl_pct} signed />
+              %)
+            </p>
+          </div>
+          <button
+            onClick={() => runAnalysis.mutate()}
+            disabled={runAnalysis.isPending}
+            className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
+          >
+            {runAnalysis.isPending ? "Analyzing…" : "Run analysis"}
+          </button>
         </div>
       </div>
       {v.unpriced_positions > 0 && (
@@ -96,6 +125,7 @@ export default function PortfolioDetailPage() {
             <th className="p-3 text-right">Value ({v.base_currency})</th>
             <th className="p-3 text-right">Day</th>
             <th className="p-3 text-right">P&L</th>
+            <th className="p-3">Signals</th>
             <th className="p-3" />
           </tr>
         </thead>
@@ -111,6 +141,9 @@ export default function PortfolioDetailPage() {
               <td className="p-3 text-right"><Money value={p.market_value_base} /></td>
               <td className="p-3 text-right"><Money value={p.day_change_base} signed /></td>
               <td className="p-3 text-right"><Money value={p.unrealized_pnl_base} signed /></td>
+              <td className="p-3">
+                <SignalBadges signals={bySymbol[p.symbol] ?? []} />
+              </td>
               <td className="p-3 text-right">
                 <button
                   onClick={() => removePosition.mutate(p.position_id)}

@@ -59,6 +59,12 @@ describe("PortfolioDetailPage", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.includes("/instruments/lookup")) {
         return new Response(JSON.stringify({ known: true }), {
           status: 200,
@@ -90,6 +96,12 @@ describe("PortfolioDetailPage", () => {
       const url = String(input);
       if (url.includes("/valuation")) {
         return new Response(JSON.stringify(VALUATION), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });

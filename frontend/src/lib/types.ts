@@ -63,3 +63,35 @@ export interface DashboardData {
   }>;
   as_of: string;
 }
+
+export interface Signal {
+  id: number;
+  instrument_id: number | null;
+  symbol: string | null;
+  kind: string;
+  severity: "info" | "watch" | "high";
+  title: string;
+  detail: string;
+  data: Record<string, string>;
+  computed_at: string;
+}
+
+export interface AttentionSignal extends Signal {
+  portfolio_id: number;
+  portfolio_name: string;
+}
+
+export interface AttentionResponse {
+  signals: AttentionSignal[];
+}
+
+export interface SignalsResponse {
+  signals: Signal[];
+  computed_at: string | null;
+}
+
+export interface AnalyzeResponse {
+  signals: Signal[];
+  as_of: string;
+  unavailable_inputs: string[];
+}

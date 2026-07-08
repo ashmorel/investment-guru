@@ -1,13 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import AttentionPanel from "../components/AttentionPanel";
 import Money from "../components/Money";
 import { apiFetch } from "../lib/api";
 import type { DashboardData } from "../lib/types";
 
 export default function DashboardPage() {
+  const qc = useQueryClient();
   const dash = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => apiFetch<DashboardData>("/api/dashboard"),
+  });
+
+  const runAnalysis = useMutation({
+    mutationFn: async () => {
+      const data = await apiFetch<DashboardData>("/api/dashboard");
+      await Promise.all(
+        data.portfolios.map((p) =>
+          apiFetch(`/api/portfolios/${p.id}/analyze`, { method: "POST" }),
+        ),
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attention"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 
   if (dash.isPending) return <p className="text-muted">Loading…</p>;
@@ -18,8 +35,18 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold text-text">Dashboard</h1>
-        <p className="text-xs text-muted">as of {new Date(as_of).toLocaleString()}</p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-muted">as of {new Date(as_of).toLocaleString()}</p>
+          <button
+            onClick={() => runAnalysis.mutate()}
+            disabled={runAnalysis.isPending}
+            className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
+          >
+            {runAnalysis.isPending ? "Analyzing…" : "Run analysis"}
+          </button>
+        </div>
       </div>
+      <AttentionPanel />
       {portfolios.length === 0 ? (
         <p className="rounded-xl bg-surface p-6 text-muted shadow">
           No portfolios yet. <Link to="/portfolios" className="text-accent underline">Create one</Link>{" "}
