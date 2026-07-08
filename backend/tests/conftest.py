@@ -157,4 +157,5 @@ async def guru_client(auth_client, fake_llm) -> httpx.AsyncClient:
     svc = GuruService(fake_llm, *(_test_services()))
     auth_client.app.dependency_overrides[get_guru] = lambda: svc
     auth_client.fake_llm = fake_llm
+    auth_client.guru_service = svc
     return auth_client

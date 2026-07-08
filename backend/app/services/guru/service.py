@@ -9,7 +9,7 @@ from app.models import GuruReport, Portfolio, User
 from app.services.guru import usage as usage_mod
 from app.services.guru.context import build_context
 from app.services.guru.llm.anthropic import AnthropicProvider
-from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider
+from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
 from app.services.guru.schemas import ReviewPayload
 from app.services.market_data.quotes import QuoteService
@@ -69,9 +69,12 @@ class GuruService:
                      f"You omitted these positions: {sorted(missing)}. "
                      "Return the complete review covering every position."},
                 ]
+                first_usage = usage
                 payload, usage = await provider.generate_structured(
                     system=PERSONA_V1, messages=messages, schema=ReviewPayload,
                     model=settings.guru_advice_model, max_tokens=4096)
+                usage = Usage(input_tokens=first_usage.input_tokens + usage.input_tokens,
+                              output_tokens=first_usage.output_tokens + usage.output_tokens)
                 missing = expected - {p.symbol for p in payload.positions}
                 if missing:
                     raise LLMError(f"review still missing positions: {sorted(missing)}")

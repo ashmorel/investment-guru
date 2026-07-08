@@ -69,13 +69,24 @@ async def test_review_generates_and_persists(guru_client, db_session, make_instr
     assert rows[0].report_id == body["id"]
 
 
-async def test_review_missing_position_retries_then_succeeds(guru_client, make_instrument):
+async def test_review_missing_position_retries_then_succeeds(
+    guru_client, db_session, make_instrument
+):
     pf_id = await _seed_portfolio(guru_client, make_instrument)
     guru_client.fake_llm.structured_queue += [_review(["AAPL"]), _review(["AAPL", "MSFT"])]
 
     resp = await guru_client.post("/api/guru/reviews", json={"portfolio_id": pf_id})
     assert resp.status_code == 201
     assert len(guru_client.fake_llm.calls) == 2  # corrective retry happened
+
+    # verify accumulated usage
+    body = resp.json()
+    rows = (await db_session.execute(
+        select(LlmUsage).where(LlmUsage.report_id == body["id"])
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].input_tokens == 200  # 100 from first call + 100 from second call
+    assert rows[0].output_tokens == 100  # 50 from first call + 50 from second call
 
 
 async def test_review_missing_position_twice_is_502(guru_client, make_instrument):
@@ -135,6 +146,19 @@ async def test_generate_review_second_call_while_locked_raises(db_session, make_
 
     report = await first
     assert report.kind == "review"
+
+
+async def test_review_http_409_when_generation_locked(guru_client, make_instrument):
+    pf_id = await _seed_portfolio(guru_client, make_instrument)
+    guru_client.fake_llm.structured_queue.append(_review(["AAPL", "MSFT"]))
+
+    # Acquire the service's review lock before making the HTTP request.
+    # This simulates a concurrent request hitting the locked service.
+    lock = guru_client.guru_service._lock("review")
+    async with lock:
+        resp = await guru_client.post("/api/guru/reviews", json={"portfolio_id": pf_id})
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == "generation_in_progress"
 
 
 async def test_review_other_users_portfolio_404(guru_client, client, db_session, make_instrument):
