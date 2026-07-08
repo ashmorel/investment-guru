@@ -1,4 +1,5 @@
 import asyncio
+import math
 from datetime import UTC, datetime
 from datetime import date as _date
 from decimal import Decimal
@@ -47,18 +48,32 @@ def parse_earnings_date(info: dict) -> _date | None:
     return None
 
 
+def _is_finite_number(v) -> bool:
+    """True for a numeric value with no None/NaN/Inf. yfinance daily history rows
+    can contain float NaN for missing/partial bars; those must never reach the DB
+    (Postgres Numeric happily stores NaN, which later blows up Decimal comparisons
+    in signal rules)."""
+    if v is None:
+        return False
+    try:
+        return math.isfinite(float(v))
+    except (TypeError, ValueError):
+        return False
+
+
 def parse_history(rows: list[dict]) -> list[Bar]:
     bars: list[Bar] = []
     for r in rows:
-        close = r.get("close")
-        if close is None:
+        open_, high, low, close = r.get("open"), r.get("high"), r.get("low"), r.get("close")
+        if not all(_is_finite_number(v) for v in (open_, high, low, close)):
             continue
         d = r["date"]
+        volume = r.get("volume")
         bars.append(Bar(
             date=_date.fromisoformat(d) if isinstance(d, str) else d,
-            open=Decimal(str(r["open"])), high=Decimal(str(r["high"])),
-            low=Decimal(str(r["low"])), close=Decimal(str(close)),
-            volume=None if r.get("volume") is None else int(r["volume"]),
+            open=Decimal(str(open_)), high=Decimal(str(high)),
+            low=Decimal(str(low)), close=Decimal(str(close)),
+            volume=int(volume) if _is_finite_number(volume) else None,
         ))
     bars.sort(key=lambda b: b.date)
     return bars

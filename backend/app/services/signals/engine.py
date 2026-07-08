@@ -70,7 +70,16 @@ class SignalEngine:
                 select(PriceBar).where(PriceBar.instrument_id == inst.id)
                 .order_by(PriceBar.date.asc())
             )).scalars().all()
-            bars[inst.id] = list(rows)
+            # Defensive filter: already-persisted bars can carry a NaN OHLC value
+            # (e.g. written before the yahoo.py parse_history guard existed). Drop
+            # them here so no signal rule ever compares against a non-finite
+            # Decimal, regardless of how the bad row got into the DB. Ordering is
+            # preserved since we only remove elements, never reorder.
+            bars[inst.id] = [
+                b for b in rows
+                if b.open.is_finite() and b.high.is_finite()
+                and b.low.is_finite() and b.close.is_finite()
+            ]
 
         # earnings (failure-isolated). FundamentalsService.refresh returns None and swallows
         # provider errors, so we detect failure by a missing fundamentals record: an instrument

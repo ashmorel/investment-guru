@@ -28,6 +28,30 @@ def test_parse_history_skips_null_close():
     assert bars == []
 
 
+def test_parse_history_skips_nan_close():
+    bars = parse_history([{"date": "2026-07-07", "open": 1, "high": 1, "low": 1,
+                           "close": float("nan"), "volume": 1}])
+    assert bars == []
+
+
+def test_parse_history_skips_nan_open_high_low():
+    rows = [
+        {"date": "2026-07-01", "open": float("nan"), "high": 1, "low": 1, "close": 1, "volume": 1},
+        {"date": "2026-07-02", "open": 1, "high": float("nan"), "low": 1, "close": 1, "volume": 1},
+        {"date": "2026-07-03", "open": 1, "high": 1, "low": float("nan"), "close": 1, "volume": 1},
+        {"date": "2026-07-04", "open": 1, "high": 1, "low": 1, "close": float("inf"), "volume": 1},
+    ]
+    assert parse_history(rows) == []
+
+
+def test_parse_history_nan_volume_becomes_none():
+    bars = parse_history([{"date": "2026-07-07", "open": 1, "high": 1, "low": 1,
+                           "close": 1, "volume": float("nan")}])
+    assert len(bars) == 1
+    assert bars[0].volume is None
+    assert bars[0].close == Decimal("1")
+
+
 def test_period_return():
     bars = _bars()
     # from close 151.0 (index -6) to 161.0 (last) over 5 trading days

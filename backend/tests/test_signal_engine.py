@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -94,6 +94,34 @@ async def test_analyze_produces_and_replaces_snapshot(db_session, make_instrumen
         select(Signal).where(Signal.portfolio_id == pf.id)
     )).scalars().all()
     assert len(stored2) == len(result2.signals)
+
+
+async def test_analyze_ignores_persisted_nan_bars(db_session, make_instrument):
+    """A NaN close already persisted in price_bars (e.g. from a bad historical write
+    before Fix A existed) must be filtered by the engine before rules see it, so
+    price_move_week never raises decimal.InvalidOperation. Postgres Numeric happily
+    stores NaN even though it isn't a real number, which is exactly how the bug
+    reached production — so this test writes one directly, bypassing Fix A."""
+    from app.models import PriceBar
+
+    pf, inst = await _make_pf(db_session, make_instrument)
+    today = date.today()
+    # 6 bars so period_return(bars, 5) has enough history; the most recent bar has a
+    # NaN close, simulating a bad row that slipped into the DB pre-Fix-A.
+    closes = [150, 151, 152, 153, 154, float("nan")]
+    for i, close in enumerate(closes):
+        db_session.add(PriceBar(
+            instrument_id=inst.id, date=today - timedelta(days=5 - i),
+            open=Decimal("150"), high=Decimal("155"), low=Decimal("149"),
+            close=Decimal(str(close)), volume=1000,
+        ))
+    await db_session.commit()
+
+    market = FakeMarket(quotes={"AAPL": _q("AAPL", 100, 100)})
+    result = await _engine(market).analyze(db_session, pf)
+    await db_session.commit()
+    # must not raise, and the NaN bar must not produce a bogus signal
+    assert "price_move_week" not in {s.kind for s in result.signals}
 
 
 async def test_provider_failure_is_isolated(db_session, make_instrument):
