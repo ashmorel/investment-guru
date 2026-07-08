@@ -8,13 +8,13 @@ from app.services.market_data.yahoo import parse_earnings_date
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-def test_parse_earnings_from_timestamp():
+async def test_parse_earnings_from_timestamp():
     # 2026-08-20 00:00 UTC epoch
     ts = int(datetime(2026, 8, 20, tzinfo=UTC).timestamp())
     assert parse_earnings_date({"earningsTimestamp": ts}) == date(2026, 8, 20)
 
 
-def test_parse_earnings_missing_returns_none():
+async def test_parse_earnings_missing_returns_none():
     assert parse_earnings_date({}) is None
 
 
