@@ -129,11 +129,58 @@ async def test_catch_up_runs_only_when_missing(db_session, fake_llm, monkeypatch
     monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
 
     user = await _make_user(db_session, "hasdigest@test.dev")
+    now = datetime.now(UTC).replace(tzinfo=None)
     db_session.add(GuruReport(
         user_id=user.id, kind="digest", portfolio_id=None,
-        payload={}, model="x", created_at=datetime.now(UTC).replace(tzinfo=None)))
+        payload={}, model="x", created_at=now))
+    db_session.add(GuruReport(
+        user_id=user.id, kind="take", portfolio_id=None,
+        payload={}, model="x", created_at=now))
     await db_session.commit()
 
     await catch_up(session_factory=TestSession)
 
     assert fake_llm.calls == []
+
+
+async def test_run_daily_job_take_failure_leaves_digest(db_session, fake_llm, monkeypatch, caplog):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import run_daily_job
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+
+    await _make_user(db_session, "takefail@test.dev")
+    # Only the digest payload is queued; the take call hits the empty-queue
+    # assertion inside FakeLLMProvider, which run_daily_job's generic
+    # except clause must swallow without raising.
+    fake_llm.structured_queue.append(_digest())
+
+    with caplog.at_level(logging.INFO, logger="app.services.guru.scheduler"):
+        await run_daily_job(session_factory=TestSession)
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest"]
+    assert caplog.records  # the take failure was logged, not raised
+
+
+async def test_catch_up_regenerates_missing_take_only(db_session, fake_llm, monkeypatch):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import catch_up
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+
+    user = await _make_user(db_session, "missingtake@test.dev")
+    db_session.add(GuruReport(
+        user_id=user.id, kind="digest", portfolio_id=None,
+        payload={}, model="x", created_at=datetime.now(UTC).replace(tzinfo=None)))
+    await db_session.commit()
+
+    fake_llm.structured_queue.append(_take())
+
+    await catch_up(session_factory=TestSession)
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest", "take"]
+    assert len(fake_llm.calls) == 1
