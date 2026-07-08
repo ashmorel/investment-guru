@@ -121,4 +121,61 @@ describe("PortfolioDetailPage", () => {
 
     expect(await screen.findByText(/symbol not recognised/i)).toBeInTheDocument();
   });
+
+  it("renders a badge for a position-scoped signal and excludes portfolio-level signals", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/signals")) {
+        return new Response(
+          JSON.stringify({
+            signals: [
+              {
+                id: 1,
+                instrument_id: 1,
+                symbol: "AAPL",
+                kind: "price_move_day",
+                severity: "watch",
+                title: "AAPL moved today",
+                detail: "AAPL is up 3.2% today",
+                data: { pct: "3.2" },
+                computed_at: "2026-07-08T00:00:00Z",
+              },
+              {
+                id: 2,
+                instrument_id: null,
+                symbol: null,
+                kind: "news_recent",
+                severity: "info",
+                title: "Portfolio-wide news",
+                detail: "General market news affecting the portfolio",
+                data: {},
+                computed_at: "2026-07-08T00:00:00Z",
+              },
+            ],
+            computed_at: "2026-07-08T00:00:00Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/instruments/lookup")) {
+        return new Response(JSON.stringify({ known: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/valuation")) {
+        return new Response(JSON.stringify(VALUATION), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("3.2% today")).toBeInTheDocument();
+    expect(screen.queryByTitle("Portfolio-wide news")).not.toBeInTheDocument();
+    expect(screen.queryByText("news")).not.toBeInTheDocument();
+  });
 });
