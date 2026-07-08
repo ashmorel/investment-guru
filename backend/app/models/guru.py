@@ -64,5 +64,5 @@ class LlmUsage(Base):
     output_tokens: Mapped[int] = mapped_column()
     est_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     report_id: Mapped[int | None] = mapped_column(ForeignKey("guru_reports.id"))
-    thread_id: Mapped[int | None] = mapped_column(ForeignKey("chat_threads.id"))
+    thread_id: Mapped[int | None] = mapped_column(ForeignKey("chat_threads.id"), index=True)
     created_at: Mapped[datetime] = mapped_column()

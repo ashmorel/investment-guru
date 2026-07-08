@@ -18,14 +18,14 @@ def upgrade() -> None:
     op.create_table(
         "investor_profiles",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False, unique=True),
+        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("risk_appetite", sa.String(16), nullable=False, server_default="balanced"),
         sa.Column("horizon", sa.String(16), nullable=False, server_default="medium"),
         sa.Column("sector_interests", postgresql.JSONB(), nullable=False, server_default="[]"),
         sa.Column("free_text", sa.Text(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
-    op.create_index("ix_investor_profiles_user_id", "investor_profiles", ["user_id"])
+    op.create_index("ix_investor_profiles_user_id", "investor_profiles", ["user_id"], unique=True)
 
     op.create_table(
         "guru_reports",
@@ -74,6 +74,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
     op.create_index("ix_llm_usage_user_id", "llm_usage", ["user_id"])
+    op.create_index("ix_llm_usage_thread_id", "llm_usage", ["thread_id"])
 
 
 def downgrade() -> None:
