@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.auth import router as auth_router
@@ -10,8 +13,20 @@ from app.api.signals import router as signals_router
 from app.api.valuation import router as valuation_router
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.services.guru.scheduler import catch_up, create_scheduler
+
+    sched = create_scheduler()
+    sched.start()
+    task = asyncio.create_task(catch_up())
+    yield
+    task.cancel()
+    sched.shutdown(wait=False)
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Investment Guru")
+    app = FastAPI(title="Investment Guru", lifespan=lifespan)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
