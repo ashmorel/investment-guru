@@ -198,3 +198,48 @@ async def test_provider_failure_is_isolated(db_session, make_instrument):
     assert "price_move_day" in {s.kind for s in result.signals}
     assert "history" in result.unavailable_inputs
     assert "earnings" in result.unavailable_inputs
+
+
+async def test_fundamentals_down_with_stale_row_reports_unavailable(db_session, make_instrument):
+    """A dead earnings feed must not be masked by a stale cached row."""
+    from app.models import InstrumentFundamentals
+
+    pf, inst = await _make_pf(db_session, make_instrument)
+    stale = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)  # older than the 20h TTL
+    db_session.add(InstrumentFundamentals(
+        instrument_id=inst.id, next_earnings_date=date.today(), fetched_at=stale,
+    ))
+    await db_session.commit()
+
+    class DeadEarnings(FakeMarket):
+        async def get_earnings_date(self, symbol):
+            raise RuntimeError("down")
+
+    market = DeadEarnings(quotes={"AAPL": _q("AAPL", 100, 100)})
+    result = await _engine(market).analyze(db_session, pf)
+    await db_session.commit()
+    assert "earnings" in result.unavailable_inputs
+
+
+async def test_news_freshness_keyed_on_published_at(db_session, make_instrument):
+    """recent_news must filter on published_at (fallback fetched_at when null)."""
+    from app.models import NewsItem
+    from app.services.market_data.news import recent_news
+    from app.services.signals import config
+
+    pf, inst = await _make_pf(db_session, make_instrument)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    db_session.add(NewsItem(
+        instrument_id=inst.id, title="Old news", source="Fake",
+        url="https://example.test/old", published_at=now - timedelta(days=10), fetched_at=now,
+    ))
+    db_session.add(NewsItem(
+        instrument_id=inst.id, title="Fallback news", source="Fake",
+        url="https://example.test/fallback", published_at=None, fetched_at=now,
+    ))
+    await db_session.commit()
+
+    items = await recent_news(db_session, inst.id, config.NEWS_WINDOW)
+    titles = {i.title for i in items}
+    assert "Old news" not in titles
+    assert "Fallback news" in titles

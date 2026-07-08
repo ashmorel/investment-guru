@@ -16,9 +16,9 @@ export default function DashboardPage() {
   const [unavailable, setUnavailable] = useState<string[]>([]);
   const runAnalysis = useMutation({
     mutationFn: async () => {
-      const data = await apiFetch<DashboardData>("/api/dashboard");
+      const portfolios = dash.data?.portfolios ?? [];
       const results = await Promise.all(
-        data.portfolios.map((p) =>
+        portfolios.map((p) =>
           apiFetch<AnalyzeResponse>(`/api/portfolios/${p.id}/analyze`, { method: "POST" }),
         ),
       );
@@ -54,6 +54,11 @@ export default function DashboardPage() {
       {unavailable.length > 0 && (
         <p className="rounded-md bg-[#FFFBEB] p-3 text-sm text-flag">
           Some data was unavailable: {unavailable.join(", ")}. Signals may be incomplete.
+        </p>
+      )}
+      {runAnalysis.isError && (
+        <p className="rounded-md bg-loss/10 p-3 text-sm text-loss">
+          Analysis failed — provider may be down. Try again.
         </p>
       )}
       <AttentionPanel />

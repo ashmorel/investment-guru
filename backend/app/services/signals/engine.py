@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -13,6 +14,8 @@ from app.services.signals import config
 from app.services.signals.rules import ALL_RULES
 from app.services.signals.types import SignalContext
 from app.services.valuation import FxService, value_portfolio
+
+logger = logging.getLogger(__name__)
 
 # Sentinel "very old" timestamp used to expire the quote cache so a signals run pulls
 # live quotes (the day-move signal must reflect the current market, not a ≤15-min cached tick).
@@ -81,16 +84,17 @@ class SignalEngine:
                 and b.low.is_finite() and b.close.is_finite()
             ]
 
-        # earnings (failure-isolated). FundamentalsService.refresh returns None and swallows
-        # provider errors, so we detect failure by a missing fundamentals record: an instrument
-        # absent from the read-back has no cached row and no fresh fetch succeeded.
+        # earnings (failure-isolated). FundamentalsService.refresh returns the set of instrument
+        # ids that are actually fresh (fresh row within TTL, or a fetch that just succeeded); an
+        # instrument missing from that set means the live call failed, even if a stale cached row
+        # still exists — the stale row must not mask the dead feed.
         try:
-            await self.fundamentals.refresh(db, instruments)
+            fresh_earnings = await self.fundamentals.refresh(db, instruments)
+            if any(i not in fresh_earnings for i in ids):
+                unavailable.append("earnings")
         except Exception:
             unavailable.append("earnings")
         earnings = await get_earnings_dates(db, ids) if instruments else {}
-        if ids and any(i not in earnings for i in ids) and "earnings" not in unavailable:
-            unavailable.append("earnings")
 
         # news (failure-isolated). Same "refreshed" set contract as history.
         try:
@@ -116,6 +120,7 @@ class SignalEngine:
             try:
                 drafts.extend(rule(ctx))
             except Exception:
+                logger.exception("signal rule %s failed", rule.__name__)
                 continue
 
         # replace snapshot transactionally: delete the portfolio's existing signals, then

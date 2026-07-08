@@ -124,6 +124,11 @@ export default function PortfolioDetailPage() {
           Some data was unavailable: {unavailable.join(", ")}. Signals may be incomplete.
         </p>
       )}
+      {runAnalysis.isError && (
+        <p className="rounded-md bg-loss/10 p-3 text-sm text-loss">
+          Analysis failed — provider may be down. Try again.
+        </p>
+      )}
       {v.unpriced_positions > 0 && (
         <p className="rounded-md bg-[#FFFBEB] p-3 text-sm text-flag">
           {v.unpriced_positions} position(s) missing live prices — values may be incomplete.

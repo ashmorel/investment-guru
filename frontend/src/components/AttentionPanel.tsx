@@ -28,6 +28,7 @@ export default function AttentionPanel() {
           {signals.map((s) => (
             <li key={s.id} className="flex items-start gap-3 text-sm">
               <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${DOT[s.severity]}`} />
+              <span className="sr-only">{s.severity} severity</span>
               <div>
                 <p className="text-text">{s.title}</p>
                 <p className="text-xs text-muted">

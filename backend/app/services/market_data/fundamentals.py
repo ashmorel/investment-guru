@@ -13,11 +13,13 @@ class FundamentalsService:
     def __init__(self, provider: MarketDataProvider):
         self.provider = provider
 
-    async def refresh(self, db: AsyncSession, instruments: list[Instrument]) -> None:
+    async def refresh(self, db: AsyncSession, instruments: list[Instrument]) -> set[int]:
         now = datetime.now(UTC).replace(tzinfo=None)
+        fresh: set[int] = set()
         for inst in instruments:
             row = await db.get(InstrumentFundamentals, inst.id)
             if row is not None and now - row.fetched_at < FUNDAMENTALS_TTL:
+                fresh.add(inst.id)
                 continue
             try:
                 ed = await self.provider.get_earnings_date(inst.symbol)
@@ -30,7 +32,9 @@ class FundamentalsService:
             else:
                 row.next_earnings_date = ed
                 row.fetched_at = now
+            fresh.add(inst.id)
         await db.flush()
+        return fresh
 
 
 async def get_earnings_dates(db: AsyncSession, instrument_ids: list[int]) -> dict[int, date | None]:

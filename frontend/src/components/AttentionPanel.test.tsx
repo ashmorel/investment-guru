@@ -41,4 +41,22 @@ describe("AttentionPanel", () => {
     renderPanel();
     expect(await screen.findByText(/No flags right now/i)).toBeInTheDocument();
   });
+
+  it("conveys severity as text, not colour alone", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          signals: [
+            { id: 1, instrument_id: 5, symbol: "NVDA", kind: "earnings_upcoming",
+              severity: "high", title: "NVDA reports in 2 days", detail: "Earnings on 2026-07-09",
+              data: {}, computed_at: "2026-07-07T09:00:00Z",
+              portfolio_id: 1, portfolio_name: "Core Growth" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    renderPanel();
+    expect(await screen.findByText(/high/i)).toBeInTheDocument(); // sr-only label
+  });
 });

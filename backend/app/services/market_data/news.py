@@ -5,7 +5,7 @@ from time import mktime
 from typing import Protocol
 
 import feedparser
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Instrument, NewsItem
@@ -106,7 +106,7 @@ async def recent_news(db: AsyncSession, instrument_id: int, within: timedelta) -
         await db.execute(
             select(NewsItem).where(
                 NewsItem.instrument_id == instrument_id,
-                NewsItem.fetched_at >= cutoff,
+                func.coalesce(NewsItem.published_at, NewsItem.fetched_at) >= cutoff,
             ).order_by(NewsItem.published_at.desc().nullslast())
         )
     ).scalars().all()
