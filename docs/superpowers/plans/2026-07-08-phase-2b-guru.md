@@ -1161,7 +1161,9 @@ API: `_latest(db, user, kind)` helper + the four endpoints (POST endpoints wrap 
 - [ ] **Step 4: Run** — PASS; full suite + ruff clean.
 - [ ] **Step 5: Commit** — `feat(guru): daily digest + Guru's take modes and endpoints`
 
----### Task 8: Scheduler + startup catch-up
+---
+
+### Task 8: Scheduler + startup catch-up
 
 **Files:**
 - Create: `backend/app/services/guru/scheduler.py`
