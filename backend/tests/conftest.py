@@ -28,10 +28,38 @@ class _NullProvider:
     async def lookup(self, symbol):
         return None
 
+    async def get_history(self, symbol, days=400):
+        return []
+
+    async def get_earnings_date(self, symbol):
+        return None
+
+
+class _NullNewsProvider:
+    async def get_news(self, symbol):
+        return []
+
 
 def _test_services():
     provider = _NullProvider()
     return QuoteService(provider), FxService(provider)
+
+
+def _null_analyzer():
+    from app.services.market_data.fundamentals import FundamentalsService
+    from app.services.market_data.history import HistoryService
+    from app.services.market_data.news import NewsService
+    from app.services.market_data.quotes import QuoteService
+    from app.services.signals.engine import SignalEngine
+    from app.services.valuation import FxService
+
+    provider = _NullProvider()
+    qs = QuoteService(provider)
+    return SignalEngine(
+        quotes=qs, fx=FxService(provider), history=HistoryService(provider),
+        fundamentals=FundamentalsService(provider), news=NewsService(_NullNewsProvider()),
+        provider=provider,
+    )
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -69,6 +97,8 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     app.dependency_overrides[get_session] = _override_session
     app.dependency_overrides[get_services] = _test_services
     app.dependency_overrides[get_provider] = lambda: _NullProvider()
+    from app.api.signals import get_analyzer
+    app.dependency_overrides[get_analyzer] = _null_analyzer
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         c.app = app  # tests that need a fake provider swap it via c.app
