@@ -43,7 +43,7 @@ export default function PortfolioDetailPage() {
     queryFn: () => apiFetch<SignalsResponse>(`/api/portfolios/${id}/signals`),
   });
   const guruReviews = useQuery({
-    queryKey: ["guru", "reviews", id],
+    queryKey: ["guru", "reviews", Number(id)],
     queryFn: () => apiFetch<ReviewsResponse>(`/api/guru/reviews?portfolio_id=${id}&limit=1`),
     retry: false,
   });
