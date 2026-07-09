@@ -19,6 +19,10 @@ class InvestorProfile(TimestampMixin, Base):
     horizon: Mapped[str] = mapped_column(String(16), default="medium")
     sector_interests: Mapped[list[str]] = mapped_column(JSONB, default=list)
     free_text: Mapped[str] = mapped_column(Text, default="")
+    birth_year: Mapped[int | None] = mapped_column(nullable=True)
+    retirement_target_age: Mapped[int | None] = mapped_column(nullable=True)
+    retirement_target_pot: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    orso_monthly_contribution: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
 
 
 class GuruReport(Base):
@@ -41,6 +45,7 @@ class ChatThread(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(200))
     portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id"))
     seed_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    scope: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
 
 class ChatMessage(Base):
