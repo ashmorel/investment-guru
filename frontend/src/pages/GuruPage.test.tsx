@@ -134,6 +134,29 @@ describe("GuruPage", () => {
     expect(posted).toBe(true);
   });
 
+  it("shows an already-generating message when running a review returns 409", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/guru/take/latest")) return jsonResponse(TAKE);
+      if (url.includes("/api/guru/digest/latest")) return jsonResponse(DIGEST);
+      if (url.includes("/api/dashboard")) return jsonResponse(DASHBOARD);
+      if (url.includes("/api/guru/reviews") && init?.method === "POST") {
+        return jsonResponse({ detail: "A review is already generating" }, 409);
+      }
+      if (url.includes("/api/guru/reviews")) return jsonResponse({ reviews: [REVIEW] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText(/core growth/i);
+    await user.click(screen.getByRole("button", { name: /run review/i }));
+
+    expect(
+      await screen.findByText(/already generating — check back shortly/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows the disclaimer on every rendered report", async () => {
     mockApi();
     const user = userEvent.setup();

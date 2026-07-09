@@ -88,6 +88,24 @@ describe("GuruTakePanel", () => {
     expect(await screen.findByText(/guru isn't configured yet/i)).toBeInTheDocument();
   });
 
+  it("shows an already-generating message when refresh returns 409", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/guru/take") && init?.method === "POST") {
+        return jsonResponse({ detail: "A take is already generating" }, 409);
+      }
+      if (url.includes("/api/guru/take/latest")) return jsonResponse(TAKE);
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByText(/markets are choppy/i);
+    await user.click(screen.getByRole("button", { name: /refresh/i }));
+
+    expect(await screen.findByText(/already generating — check back shortly/i)).toBeInTheDocument();
+  });
+
   it("fires a refresh POST then refetches the latest take", async () => {
     let posted = false;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

@@ -284,6 +284,35 @@ describe("PortfolioDetailPage", () => {
     expect(screen.getByRole("link", { name: /ask in chat/i })).toBeInTheDocument();
   });
 
+  it("shows a distinct unavailable message when the reviews fetch fails, without blocking the table", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ detail: "internal error" }), {
+          status: 500, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/valuation")) {
+        return new Response(JSON.stringify(VALUATION), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/guru take unavailable/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no take yet — run a review/i)).not.toBeInTheDocument();
+    expect(await screen.findByText("AAPL")).toBeInTheDocument();
+    expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
+  });
+
   it("shows a fallback message when no review covers the position yet", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);

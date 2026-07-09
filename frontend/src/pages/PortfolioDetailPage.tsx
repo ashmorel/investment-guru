@@ -48,6 +48,10 @@ export default function PortfolioDetailPage() {
     retry: false,
   });
   const latestReview = guruReviews.data?.reviews[0] ?? null;
+  // 404 (no reviews yet) collapses into the ordinary "no take" empty state;
+  // any other query error (network/5xx) is a distinct fetch failure.
+  const guruReviewsUnavailable =
+    guruReviews.isError && !(guruReviews.error instanceof ApiError && guruReviews.error.status === 404);
 
   const [unavailable, setUnavailable] = useState<string[]>([]);
   const runAnalysis = useMutation({
@@ -179,6 +183,13 @@ export default function PortfolioDetailPage() {
               </td>
               <td className="p-3">
                 {(() => {
+                  // A 404 (nothing generated yet) reads as the same "no take"
+                  // empty state as an empty review list; any other query error
+                  // (e.g. 500) is a distinct fetch failure worth surfacing on
+                  // its own, without blocking the rest of the table.
+                  if (guruReviewsUnavailable) {
+                    return <span className="text-xs text-muted">Guru take unavailable</span>;
+                  }
                   const verdict = latestReview?.payload.positions.find(
                     (pv) => pv.symbol === p.symbol,
                   );
@@ -190,7 +201,12 @@ export default function PortfolioDetailPage() {
                   return (
                     <div className="space-y-1">
                       <VerdictChip action={verdict.action} conviction={verdict.conviction} />
-                      <p className="text-xs text-muted">{verdict.rationale}</p>
+                      <p
+                        className="max-w-[28rem] text-xs text-muted line-clamp-2"
+                        title={verdict.rationale}
+                      >
+                        {verdict.rationale}
+                      </p>
                       <p className="text-xs text-muted">
                         Generated {new Date(latestReview.created_at).toLocaleString()}
                       </p>
