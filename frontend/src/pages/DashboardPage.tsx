@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import AttentionPanel from "../components/AttentionPanel";
+import GuruTakePanel from "../components/GuruTakePanel";
 import Money from "../components/Money";
 import { apiFetch } from "../lib/api";
 import type { AnalyzeResponse, DashboardData } from "../lib/types";
@@ -61,7 +62,6 @@ export default function DashboardPage() {
           Analysis failed — provider may be down. Try again.
         </p>
       )}
-      <AttentionPanel />
       {portfolios.length === 0 ? (
         <p className="rounded-xl bg-surface p-6 text-muted shadow">
           No portfolios yet. <Link to="/portfolios" className="text-accent underline">Create one</Link>{" "}
@@ -90,17 +90,8 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
-      <div className="rounded-xl border border-border bg-surface p-5 shadow">
-        <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="text-sm text-indigo-500">
-            ✦
-          </span>
-          <h2 className="font-medium text-text">Guru's take</h2>
-        </div>
-        <p className="mt-2 text-sm text-muted">
-          Portfolio commentary, key risks and rebalance ideas arrive with Phase 2.
-        </p>
-      </div>
+      <GuruTakePanel />
+      <AttentionPanel />
     </div>
   );
 }

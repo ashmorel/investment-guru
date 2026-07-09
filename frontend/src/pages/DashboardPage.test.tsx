@@ -9,6 +9,11 @@ describe("DashboardPage", () => {
   it("renders portfolio cards with values", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
+      if (url.includes("/api/guru/take/latest")) {
+        return new Response(JSON.stringify({ detail: "not found" }), {
+          status: 404, headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.includes("/dashboard/attention")) {
         return new Response(JSON.stringify({ signals: [] }), {
           status: 200, headers: { "Content-Type": "application/json" },
@@ -56,6 +61,11 @@ describe("DashboardPage", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
+      if (url.includes("/api/guru/take/latest")) {
+        return new Response(JSON.stringify({ detail: "not found" }), {
+          status: 404, headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.includes("/dashboard/attention")) {
         return new Response(JSON.stringify({ signals: [] }), {
           status: 200, headers: { "Content-Type": "application/json" },
@@ -94,6 +104,11 @@ describe("DashboardPage", () => {
       const url = String(input);
       if (url.includes("/analyze") && init?.method === "POST") {
         throw new Error("network down");
+      }
+      if (url.includes("/api/guru/take/latest")) {
+        return new Response(JSON.stringify({ detail: "not found" }), {
+          status: 404, headers: { "Content-Type": "application/json" },
+        });
       }
       if (url.includes("/dashboard/attention")) {
         return new Response(JSON.stringify({ signals: [] }), {
@@ -142,6 +157,11 @@ describe("DashboardPage", () => {
           JSON.stringify({ signals: [], as_of: "2026-07-07T09:00:00Z", unavailable_inputs: ["history"] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
+      }
+      if (url.includes("/api/guru/take/latest")) {
+        return new Response(JSON.stringify({ detail: "not found" }), {
+          status: 404, headers: { "Content-Type": "application/json" },
+        });
       }
       if (url.includes("/dashboard/attention")) {
         return new Response(JSON.stringify({ signals: [] }), {

@@ -1,16 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import Money from "../components/Money";
 import SignalBadges from "../components/SignalBadges";
+import VerdictChip from "../components/VerdictChip";
 import { apiFetch, ApiError } from "../lib/api";
 import type {
   AnalyzeResponse,
+  GuruReport,
   PortfolioValuation,
   Position,
+  ReviewPayload,
   Signal,
   SignalsResponse,
 } from "../lib/types";
+
+interface ReviewsResponse {
+  reviews: GuruReport<ReviewPayload>[];
+}
 
 // Only the position-conflict (409) response has a detail worth surfacing
 // verbatim — lookup failures (404) keep the friendlier fallback copy below.
@@ -35,6 +42,12 @@ export default function PortfolioDetailPage() {
     queryKey: ["signals", id],
     queryFn: () => apiFetch<SignalsResponse>(`/api/portfolios/${id}/signals`),
   });
+  const guruReviews = useQuery({
+    queryKey: ["guru", "reviews", id],
+    queryFn: () => apiFetch<ReviewsResponse>(`/api/guru/reviews?portfolio_id=${id}&limit=1`),
+    retry: false,
+  });
+  const latestReview = guruReviews.data?.reviews[0] ?? null;
 
   const [unavailable, setUnavailable] = useState<string[]>([]);
   const runAnalysis = useMutation({
@@ -145,6 +158,7 @@ export default function PortfolioDetailPage() {
             <th className="p-3 text-right">Day</th>
             <th className="p-3 text-right">P&L</th>
             <th className="p-3">Signals</th>
+            <th className="p-3">Guru's take</th>
             <th className="p-3" />
           </tr>
         </thead>
@@ -162,6 +176,33 @@ export default function PortfolioDetailPage() {
               <td className="p-3 text-right"><Money value={p.unrealized_pnl_base} signed /></td>
               <td className="p-3">
                 <SignalBadges signals={bySymbol[p.symbol] ?? []} />
+              </td>
+              <td className="p-3">
+                {(() => {
+                  const verdict = latestReview?.payload.positions.find(
+                    (pv) => pv.symbol === p.symbol,
+                  );
+                  if (!latestReview || !verdict) {
+                    return (
+                      <span className="text-xs text-muted">No take yet — run a review.</span>
+                    );
+                  }
+                  return (
+                    <div className="space-y-1">
+                      <VerdictChip action={verdict.action} conviction={verdict.conviction} />
+                      <p className="text-xs text-muted">{verdict.rationale}</p>
+                      <p className="text-xs text-muted">
+                        Generated {new Date(latestReview.created_at).toLocaleString()}
+                      </p>
+                      <Link
+                        to={`/guru?discuss=${encodeURIComponent(JSON.stringify(verdict))}`}
+                        className="text-xs text-accent underline"
+                      >
+                        Ask in chat
+                      </Link>
+                    </div>
+                  );
+                })()}
               </td>
               <td className="p-3 text-right">
                 <button

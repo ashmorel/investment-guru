@@ -53,6 +53,12 @@ describe("PortfolioDetailPage", () => {
   it("surfaces the server's 409 detail when adding a duplicate position", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ reviews: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.includes("/valuation")) {
         return new Response(JSON.stringify(VALUATION), {
           status: 200,
@@ -94,6 +100,12 @@ describe("PortfolioDetailPage", () => {
   it("falls back to generic copy when the lookup itself fails", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ reviews: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.includes("/valuation")) {
         return new Response(JSON.stringify(VALUATION), {
           status: 200,
@@ -137,6 +149,12 @@ describe("PortfolioDetailPage", () => {
       }
       if (url.includes("/signals")) {
         return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ reviews: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -197,6 +215,12 @@ describe("PortfolioDetailPage", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ reviews: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.includes("/valuation")) {
         return new Response(JSON.stringify(VALUATION), {
           status: 200,
@@ -211,5 +235,78 @@ describe("PortfolioDetailPage", () => {
     expect(await screen.findByText("3.2% today")).toBeInTheDocument();
     expect(screen.queryByTitle("Portfolio-wide news")).not.toBeInTheDocument();
     expect(screen.queryByText("news")).not.toBeInTheDocument();
+  });
+
+  it("shows the Guru's take chip and rationale when a review covers the position", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(
+          JSON.stringify({
+            reviews: [
+              {
+                id: 9,
+                kind: "review",
+                portfolio_id: 1,
+                payload: {
+                  positions: [
+                    { symbol: "AAPL", action: "hold", conviction: "high", rationale: "Steady compounder." },
+                  ],
+                  observations: [],
+                  watch_next: [],
+                  disclaimer: "Not financial advice.",
+                },
+                model: "gpt-5",
+                created_at: "2026-07-08T09:00:00Z",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/valuation")) {
+        return new Response(JSON.stringify(VALUATION), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/HOLD · HIGH/)).toBeInTheDocument();
+    expect(screen.getByText(/steady compounder/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /ask in chat/i })).toBeInTheDocument();
+  });
+
+  it("shows a fallback message when no review covers the position yet", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ reviews: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/valuation")) {
+        return new Response(JSON.stringify(VALUATION), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/no take yet — run a review/i)).toBeInTheDocument();
   });
 });
