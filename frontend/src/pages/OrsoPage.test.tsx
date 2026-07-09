@@ -234,6 +234,32 @@ describe("OrsoPage", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: /save goals/i })).not.toBeInTheDocument());
   });
 
+  it("re-derives goals form from server data when edit is opened; does not persist stale edits on cancel", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("HKEF");
+
+    // Open edit mode, change the target pot, then cancel
+    await user.click(screen.getByRole("button", { name: /edit goals/i }));
+    const targetPotInput = screen.getByLabelText(/target pot/i) as HTMLInputElement;
+    await user.clear(targetPotInput);
+    await user.type(targetPotInput, "9999999");
+    expect(targetPotInput.value).toBe("9999999");
+
+    // Cancel and close the edit form (find the cancel button in the edit form)
+    const cancelButtons = screen.getAllByRole("button", { name: /cancel/i });
+    const editFormCancelButton = cancelButtons[cancelButtons.length - 1]; // last cancel is in the edit form
+    await user.click(editFormCancelButton);
+    await waitFor(() => expect(screen.queryByLabelText(/target pot/i)).not.toBeInTheDocument());
+
+    // Reopen edit mode — the form should re-derive from the server value, not the stale draft
+    await user.click(screen.getByRole("button", { name: /edit goals/i }));
+    const reopenedInput = screen.getByLabelText(/target pot/i) as HTMLInputElement;
+    expect(reopenedInput.value).toBe("1000000.00"); // server value, not "9999999"
+  });
+
   it("renders switching advice verdict chips (including keep), switch plan, and disclaimer", async () => {
     mockApi();
     renderPage();

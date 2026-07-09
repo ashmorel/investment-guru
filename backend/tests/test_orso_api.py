@@ -42,6 +42,7 @@ async def test_endpoints_require_auth(client):
     assert (await client.get("/api/orso/funds")).status_code == 401
     assert (await client.get("/api/orso/overview")).status_code == 401
     assert (await client.get("/api/orso/goals")).status_code == 401
+    assert (await client.get("/api/orso/switchlog")).status_code == 401
 
 
 # --- funds CRUD + ownership ------------------------------------------------

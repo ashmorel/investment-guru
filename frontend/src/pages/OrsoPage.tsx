@@ -88,6 +88,7 @@ function AllocationCard({ overview }: { overview: OrsoOverview }) {
     onSuccess: (res) => {
       if (res.unavailable) setRefreshUnavailable(true);
       qc.invalidateQueries({ queryKey: ["orso", "overview"] });
+      qc.invalidateQueries({ queryKey: ["orso", "switchlog"] });
     },
   });
 
@@ -495,6 +496,13 @@ function GoalsCard({ overview }: { overview: OrsoOverview }) {
     if (goals.data && form === null) setForm(toForm(goals.data));
   }, [goals.data, form]);
 
+  function startEdit() {
+    if (goals.data) {
+      setForm(toForm(goals.data));
+      setEditing(true);
+    }
+  }
+
   const save = useMutation({
     mutationFn: (body: GoalsForm) =>
       apiFetch<OrsoGoals>("/api/orso/goals", {
@@ -522,7 +530,7 @@ function GoalsCard({ overview }: { overview: OrsoOverview }) {
         <h2 className="font-medium text-text">Retirement goals</h2>
         <button
           type="button"
-          onClick={() => setEditing((e) => !e)}
+          onClick={startEdit}
           className="text-sm text-accent underline"
         >
           Edit goals ✎
@@ -613,7 +621,14 @@ function GoalsCard({ overview }: { overview: OrsoOverview }) {
             >
               {save.isPending ? "Saving…" : "Save goals"}
             </button>
-            <button type="button" onClick={() => setEditing(false)} className="text-sm text-muted underline">
+            <button
+              type="button"
+              onClick={() => {
+                if (goals.data) setForm(toForm(goals.data));
+                setEditing(false);
+              }}
+              className="text-sm text-muted underline"
+            >
               Cancel
             </button>
           </div>
