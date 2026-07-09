@@ -39,6 +39,7 @@ def _take():
 
 async def test_digest_generates_with_scan_model(guru_client, db_session):
     guru_client.fake_llm.structured_queue.append(_digest())
+    guru_client.fake_llm.structured_queue.append(_take())  # create_digest also refreshes the take
 
     resp = await guru_client.post("/api/guru/digest")
     assert resp.status_code == 201
@@ -63,8 +64,14 @@ async def test_digest_generates_with_scan_model(guru_client, db_session):
 async def test_take_uses_advice_model_and_sees_latest_digest(guru_client, db_session):
     digest = _digest()
     guru_client.fake_llm.structured_queue.append(digest)
+    guru_client.fake_llm.structured_queue.append(_take())  # create_digest also refreshes the take
     digest_resp = await guru_client.post("/api/guru/digest")
     assert digest_resp.status_code == 201
+
+    digest_call = guru_client.fake_llm.calls[0]
+    assert digest_call["max_tokens"] == 2048
+    take_via_digest_call = guru_client.fake_llm.calls[1]
+    assert take_via_digest_call["max_tokens"] == 4096
 
     guru_client.fake_llm.structured_queue.append(_take())
     resp = await guru_client.post("/api/guru/take")
@@ -76,6 +83,7 @@ async def test_take_uses_advice_model_and_sees_latest_digest(guru_client, db_ses
 
     take_call = guru_client.fake_llm.calls[-1]
     assert take_call["model"] == "claude-opus-4-8"
+    assert take_call["max_tokens"] == 4096
     user_message = take_call["messages"][0]["content"]
     assert digest.summary in user_message  # context handoff from latest digest
 
@@ -146,3 +154,43 @@ async def test_digest_http_409_when_generation_locked(guru_client):
         resp = await guru_client.post("/api/guru/digest")
         assert resp.status_code == 409
         assert resp.json()["detail"] == "generation_in_progress"
+
+
+async def test_manual_digest_also_refreshes_the_take(guru_client, db_session):
+    guru_client.fake_llm.structured_queue.append(_digest())
+    guru_client.fake_llm.structured_queue.append(_take())
+
+    resp = await guru_client.post("/api/guru/digest")
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "digest"
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest", "take"]
+
+    latest_take = await guru_client.get("/api/guru/take/latest")
+    assert latest_take.status_code == 200
+
+
+async def test_manual_digest_survives_take_failure(guru_client, db_session, monkeypatch):
+    from app.services.guru.llm.base import LLMError
+
+    guru_client.fake_llm.structured_queue.append(_digest())
+
+    # Digest succeeds normally; the take call is forced to fail so we can assert
+    # create_digest's try/except around generate_take doesn't fail the response.
+    async def _fail_take(db, user):
+        raise LLMError("injected take failure")
+
+    monkeypatch.setattr(guru_client.guru_service, "generate_take", _fail_take)
+
+    resp = await guru_client.post("/api/guru/digest")
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "digest"
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest"]
+
+    assert (await guru_client.get("/api/guru/take/latest")).status_code == 404

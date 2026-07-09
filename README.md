@@ -16,6 +16,7 @@ docker compose up -d db
 cd backend && python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env   # then edit values; add ANTHROPIC_API_KEY=... to enable the Guru
+# note: (re)start the backend after adding the key — it is read at startup
 alembic upgrade head && python -m app.seed
 uvicorn app.main:app --reload --factory  # (app.main:create_app)
 # frontend (from repo root):

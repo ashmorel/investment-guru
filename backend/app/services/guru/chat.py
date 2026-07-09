@@ -89,6 +89,15 @@ class ChatService:
         rows = list(reversed(rows))
 
         messages = [{"role": r.role, "content": r.content} for r in rows]
+
+        # Anthropic's Messages API requires messages[0].role == "user". The naive
+        # last-N window can begin with an assistant turn (or, after a failed stream
+        # leaves consecutive user rows, could even need more than one message
+        # trimmed) -- do not assume strict alternation, just drop leading
+        # non-user messages until the window starts on a user turn.
+        while messages and messages[0]["role"] != "user":
+            messages.pop(0)
+
         for m in messages:
             if m["role"] == "user":
                 m["content"] = json.dumps(ctx) + "\n\n" + m["content"]

@@ -15,7 +15,7 @@ class FakeLLMProvider(LLMProvider):
 
     async def generate_structured(self, *, system, messages, schema, model, max_tokens):
         self.calls.append({"kind": "structured", "system": system,
-                           "messages": messages, "model": model})
+                           "messages": messages, "model": model, "max_tokens": max_tokens})
         if self.fail_structured > 0:
             self.fail_structured -= 1
             raise LLMError("injected failure")
@@ -26,7 +26,7 @@ class FakeLLMProvider(LLMProvider):
 
     def stream_text(self, *, system, messages, model, max_tokens) -> TextStream:
         self.calls.append({"kind": "stream", "system": system,
-                           "messages": messages, "model": model})
+                           "messages": messages, "model": model, "max_tokens": max_tokens})
         stream_holder: list[TextStream] = []
 
         async def gen():

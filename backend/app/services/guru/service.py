@@ -97,7 +97,7 @@ class GuruService:
 
     async def _generate_global(self, db: AsyncSession, user: User, *, kind: str, schema,
                                model: str, instruction: str,
-                               extra_context: str = "") -> GuruReport:
+                               extra_context: str = "", max_tokens: int = 2048) -> GuruReport:
         provider = self._require_provider()
         lock = self._lock(kind)
         if lock.locked():
@@ -110,7 +110,7 @@ class GuruService:
             content = instruction + "\n\n" + json.dumps(ctx) + extra_context
             payload, usage = await provider.generate_structured(
                 system=PERSONA_V1, messages=[{"role": "user", "content": content}],
-                schema=schema, model=model, max_tokens=2048)
+                schema=schema, model=model, max_tokens=max_tokens)
             report = GuruReport(user_id=user.id, kind=kind, portfolio_id=None,
                                 payload=payload.model_dump(), model=model, created_at=_now())
             db.add(report)
@@ -141,7 +141,7 @@ class GuruService:
             db, user, kind="take", schema=TakePayload, model=settings.guru_advice_model,
             instruction="Give your portfolio-level take: what moved and why, key risks vs the "
                         "investor's profile, and rebalance ideas with conviction.",
-            extra_context=extra_context)
+            extra_context=extra_context, max_tokens=4096)
 
 
 _service: GuruService | None = None

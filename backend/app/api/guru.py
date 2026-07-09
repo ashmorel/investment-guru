@@ -1,4 +1,5 @@
 import json as _json
+import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.portfolios import get_owned_portfolio
@@ -14,6 +16,8 @@ from app.models import ChatMessage, ChatThread, GuruReport, InvestorProfile, Llm
 from app.services.guru.chat import ChatService
 from app.services.guru.llm.base import LLMError, LLMNotConfigured
 from app.services.guru.service import GenerationInProgress, GuruService, get_guru_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/guru", tags=["guru"])
 
@@ -69,14 +73,16 @@ async def read_profile(db: SessionDep, user: CurrentUser):
 
 @router.put("/profile", response_model=ProfileOut)
 async def write_profile(body: ProfileIn, db: SessionDep, user: CurrentUser):
-    row = await get_profile_row(db, user)
-    if row is None:
-        row = InvestorProfile(user_id=user.id)
-        db.add(row)
-    row.risk_appetite = body.risk_appetite
-    row.horizon = body.horizon
-    row.sector_interests = body.sector_interests
-    row.free_text = body.free_text
+    # Race-safe upsert: two concurrent PUTs from the same user (e.g. a double
+    # submit) would otherwise both see no existing row, both INSERT, and the
+    # second hits the investor_profiles.user_id unique constraint -> 500.
+    values = dict(
+        risk_appetite=body.risk_appetite, horizon=body.horizon,
+        sector_interests=body.sector_interests, free_text=body.free_text,
+    )
+    stmt = pg_insert(InvestorProfile).values(user_id=user.id, **values)
+    stmt = stmt.on_conflict_do_update(index_elements=["user_id"], set_=values)
+    await db.execute(stmt)
     await db.commit()
     return ProfileOut(**body.model_dump())
 
@@ -152,6 +158,12 @@ async def read_latest_digest(db: SessionDep, user: CurrentUser):
 async def create_digest(db: SessionDep, user: CurrentUser, guru: GuruDep):
     with map_guru_errors():
         report = await guru.generate_digest(db, user)
+    # Spec: the take runs after each digest run. A stale/missing take must never
+    # fail the digest response -- log and move on.
+    try:
+        await guru.generate_take(db, user)
+    except (LLMError, GenerationInProgress):
+        logger.exception("guru: take refresh after manual digest failed")
     return _report_out(report)
 
 

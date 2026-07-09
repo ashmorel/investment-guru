@@ -1,11 +1,21 @@
+from datetime import datetime, timedelta
+
 import pytest
 from sqlalchemy import select
 
 from app.core.security import hash_password
-from app.models import LlmUsage, Portfolio
+from app.models import ChatMessage, LlmUsage, Portfolio
 from app.models.user import User
 from app.services.guru.persona import DISCLAIMER
-from app.services.guru.schemas import DigestPayload, EarningsItem, MoverItem, NewsFlag
+from app.services.guru.schemas import (
+    DigestPayload,
+    EarningsItem,
+    IdeaItem,
+    MoverItem,
+    NewsFlag,
+    RiskItem,
+    TakePayload,
+)
 from app.services.guru.service import GuruService
 from tests.conftest import _test_services
 
@@ -18,6 +28,15 @@ def _digest():
         movers=[MoverItem(symbol="MSFT", note="+3% on AI news")],
         news_flags=[NewsFlag(symbol="AAPL", headline="Supplier deal", comment="benign")],
         summary="Quiet week overall, nothing to act on.",
+        disclaimer=DISCLAIMER,
+    )
+
+
+def _take():
+    return TakePayload(
+        commentary="Portfolio steady this week; no material changes needed.",
+        risks=[RiskItem(kind="concentration", note="tech heavy")],
+        ideas=[IdeaItem(symbol="AAPL", action="hold", conviction="med", rationale="steady")],
         disclaimer=DISCLAIMER,
     )
 
@@ -105,6 +124,73 @@ async def test_chat_turn_includes_prior_history(guru_client):
     assert "ok" in contents[1]  # prior assistant turn carried forward
 
 
+async def _seed_messages(db_session, thread_id: int, roles: list[str], start: datetime) -> None:
+    """Insert ChatMessage rows directly (bypassing the API) in chronological order,
+    each a second apart so created_at ordering is unambiguous."""
+    for i, role in enumerate(roles):
+        db_session.add(ChatMessage(
+            thread_id=thread_id, role=role,
+            content=f"seed {i} ({role})", created_at=start + timedelta(seconds=i)))
+    await db_session.commit()
+
+
+async def test_chat_history_window_trims_leading_assistant_turn(guru_client, db_session):
+    # Seed 20 messages (10 alternating user/assistant pairs, oldest first, ending on
+    # assistant) directly in the DB -- no API calls, so no LLM round-trips happen here.
+    t = (await guru_client.post("/api/guru/chat/threads", json={"title": "T"})).json()
+    roles = ["user", "assistant"] * 10
+    await _seed_messages(db_session, t["id"], roles, datetime(2026, 1, 1))
+
+    # Sending one more turn brings the thread to 21 messages. The naive "last 20"
+    # window (by created_at/id) then drops only the oldest (a user turn), leaving
+    # the window starting on an assistant turn -- which Anthropic's Messages API
+    # rejects (messages[0].role must be "user").
+    guru_client.fake_llm.stream_chunks = ["ack"]
+    async with guru_client.stream(
+        "POST", f"/api/guru/chat/threads/{t['id']}/messages",
+        json={"content": "latest question"},
+    ) as resp:
+        assert resp.status_code == 200
+        [_ async for _ in resp.aiter_text()]
+
+    call = guru_client.fake_llm.calls[-1]
+    assert call["kind"] == "stream"
+    assert call["messages"][0]["role"] == "user"
+    assert call["messages"][-1]["role"] == "user"
+    assert "latest question" in call["messages"][-1]["content"]
+    # the leading assistant turn was trimmed, not merely reordered
+    assert len(call["messages"]) == 19
+
+
+async def test_chat_history_window_survives_consecutive_user_rows(guru_client, db_session):
+    # Same 20-message alternating history as above, plus one extra stray user row
+    # with no assistant reply -- simulating a failed stream that persisted the
+    # user's turn but never got an assistant response. When the user retries via
+    # the API, that produces two consecutive user rows at the tail of the thread.
+    t = (await guru_client.post("/api/guru/chat/threads", json={"title": "T"})).json()
+    roles = ["user", "assistant"] * 10 + ["user"]
+    await _seed_messages(db_session, t["id"], roles, datetime(2026, 1, 1))
+
+    guru_client.fake_llm.stream_chunks = ["ack"]
+    async with guru_client.stream(
+        "POST", f"/api/guru/chat/threads/{t['id']}/messages",
+        json={"content": "second attempt"},
+    ) as resp:
+        assert resp.status_code == 200
+        [_ async for _ in resp.aiter_text()]
+
+    call = guru_client.fake_llm.calls[-1]
+    messages = call["messages"]
+    assert messages[0]["role"] == "user"
+    # the stray retry row and the new turn are adjacent, both role=user
+    assert messages[-1]["role"] == "user"
+    assert messages[-2]["role"] == "user"
+    assert "second attempt" in messages[-1]["content"]
+    # context blob is attached to the first user message only, not duplicated
+    assert '"profile"' in messages[0]["content"]
+    assert '"profile"' not in messages[-1]["content"]
+
+
 async def test_chat_thread_scoped_to_portfolio_uses_its_context(guru_client, make_instrument):
     await make_instrument("AAPL")
     pf_id = (await guru_client.post(
@@ -183,6 +269,7 @@ async def test_chat_unconfigured_503(auth_client):
 
 async def test_usage_summary_aggregates(guru_client):
     guru_client.fake_llm.structured_queue.append(_digest())
+    guru_client.fake_llm.structured_queue.append(_take())  # create_digest also refreshes the take
     resp = await guru_client.post("/api/guru/digest")
     assert resp.status_code == 201
 
