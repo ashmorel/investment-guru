@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import ChatPanel from "./ChatPanel";
 import { streamSSE } from "../lib/sse";
+import { ApiError } from "../lib/api";
 
 vi.mock("../lib/sse", () => ({ streamSSE: vi.fn() }));
 
@@ -178,20 +179,26 @@ describe("ChatPanel", () => {
   it("guards stale streaming callbacks after the user switches threads mid-send", async () => {
     mockApi();
 
-    // Capture the handlers streamSSE was given for thread A's send so we can
-    // fire them late, after the user has already switched to thread B — this
-    // reproduces callbacks racing a thread switch.
-    let captured: {
+    // `selectThread` itself resets `streaming`/`streamingText` to
+    // false/"" on every thread switch, which would mask a missing
+    // per-callback guard if thread B stayed idle (the streaming bubble
+    // wouldn't render regardless of what A's late callbacks write into
+    // shared state). So this test starts a SECOND, genuine send in thread
+    // B — its streaming bubble is what A's leaked callbacks would corrupt
+    // if `sentThreadId !== activeThreadIdRef.current` were removed from
+    // onDelta/onDone.
+    type Handlers = {
       onDelta: (text: string) => void;
       onDone: (d: { message_id: number }) => void;
       onError: (detail: string) => void;
-    } | null = null;
-    let resolveThreadA: () => void = () => {};
+    };
+    const captured: Handlers[] = [];
+    const resolvers: Array<() => void> = [];
     mockStreamSSE.mockImplementation(
       (_path, _body, handlers) =>
         new Promise<void>((resolve) => {
-          captured = handlers;
-          resolveThreadA = resolve;
+          captured.push(handlers);
+          resolvers.push(resolve);
         }),
     );
 
@@ -212,31 +219,98 @@ describe("ChatPanel", () => {
     await user.click(screen.getByRole("button", { name: /^send$/i }));
 
     expect(await screen.findByText("Thread A message")).toBeInTheDocument();
-    expect(captured).not.toBeNull();
+    expect(captured).toHaveLength(1);
 
-    // Switch to thread B ("General") before thread A's stream settles.
+    // Switch to thread B ("General") before thread A's stream settles, then
+    // start a genuine send in B so B has its own live streaming bubble.
+    await user.click(screen.getByRole("button", { name: /^general$/i }));
+    expect(await screen.findByText(/ask the guru anything/i)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/message/i), "Thread B message");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(await screen.findByText("Thread B message")).toBeInTheDocument();
+    expect(captured).toHaveLength(2);
+    const [threadA, threadB] = captured;
+
+    // Fire thread A's late delta frame ALONE first, while B's own stream is
+    // live. If the onDelta guard were removed, this alone would splice
+    // "leaked from thread A" into B's (shared) streamingText state, and
+    // B's visible streaming bubble would render it — so this assertion
+    // must fail without the guard.
+    await act(async () => {
+      threadA.onDelta("leaked from thread A");
+    });
+
+    expect(screen.queryByText(/leaked from thread A/i)).not.toBeInTheDocument();
+    // B's own stream is still legitimately live.
+    expect(screen.getByText(/streaming…/i)).toBeInTheDocument();
+
+    // Now let thread A's done frame arrive. Its own invalidation must still
+    // fire, but the reset (`streaming`/`streamingText`/`pendingUser`) must
+    // not stomp thread B's still-in-flight send.
+    await act(async () => {
+      threadA.onDone({ message_id: 99 });
+      resolvers[0]();
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["guru", "chat", "thread", 2] });
+    expect(screen.queryByText(/leaked from thread A/i)).not.toBeInTheDocument();
+    // B's send must still be visibly live — a removed onDone guard would
+    // have reset `streaming` to false and cleared B's pending user bubble.
+    expect(screen.getByText(/streaming…/i)).toBeInTheDocument();
+    expect(screen.getByText("Thread B message")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
+
+    // Settle B's own send normally.
+    await act(async () => {
+      threadB.onDelta("Hi from B");
+      threadB.onDone({ message_id: 100 });
+      resolvers[1]();
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["guru", "chat", "thread", 1] });
+    expect(screen.queryByText(/streaming…/i)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/message/i), "one more");
+    expect(screen.getByRole("button", { name: /^send$/i })).not.toBeDisabled();
+  });
+
+  it("guards the catch block after streamSSE throws following a thread switch", async () => {
+    mockApi();
+
+    // streamSSE (mocked at the module level) throws AFTER the user has
+    // already switched threads — simulating an ApiError from a late-settling
+    // fetch (e.g. a 503 from `_require_provider` before any streaming
+    // begins). The catch block in handleSend must guard its state writes
+    // the same way the onDelta/onDone/onError handlers do.
+    let rejectThreadA: (e: unknown) => void = () => {};
+    mockStreamSSE.mockImplementation(
+      (_path, _body, _handlers) =>
+        new Promise<void>((_resolve, reject) => {
+          rejectThreadA = reject;
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByRole("button", { name: /reduce nvda/i });
+    await user.type(screen.getByLabelText(/message/i), "Thread A message");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(await screen.findByText("Thread A message")).toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: /^general$/i }));
     expect(await screen.findByText(/ask the guru anything/i)).toBeInTheDocument();
 
-    // Now let thread A's late delta + done frames arrive.
     await act(async () => {
-      captured?.onDelta("leaked from thread A");
-      captured?.onDone({ message_id: 99 });
-      resolveThreadA();
+      rejectThreadA(new ApiError(503, "guru unavailable"));
     });
 
-    // Thread B's UI must not be corrupted by A's late callbacks.
-    expect(screen.queryByText(/leaked from thread A/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/streaming…/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/failed to send/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/guru unavailable/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
-    // `streaming` must have been reset to false for thread B, not left stuck
-    // true by a stale onDone guard — typing a new draft re-enables Send.
     await user.type(screen.getByLabelText(/message/i), "Thread B message");
     expect(screen.getByRole("button", { name: /^send$/i })).not.toBeDisabled();
-
-    // The server did persist A's message, so its own thread query still gets
-    // invalidated even though it's no longer the active thread.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["guru", "chat", "thread", 2] });
   });
 
   it("guards a stale error frame after a thread switch, avoiding a misattributed retry banner", async () => {
