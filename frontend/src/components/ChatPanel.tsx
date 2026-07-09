@@ -57,6 +57,13 @@ export default function ChatPanel({ discuss }: { discuss?: string | null }) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [seedNote, setSeedNote] = useState<{ threadId: number; label: string } | null>(null);
   const seededRef = useRef<string | null>(null);
+  // Tracks the currently-active thread so late streamSSE callbacks from a
+  // thread the user has since switched away from can detect they're stale
+  // and skip mutating UI state (guard, not cancellation — see ChatPanel.test.tsx).
+  const activeThreadIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
 
   const threadsQuery = useQuery({
     queryKey: ["guru", "chat", "threads"],
@@ -126,6 +133,10 @@ export default function ChatPanel({ discuss }: { discuss?: string | null }) {
   async function handleSend(content: string) {
     const trimmed = content.trim();
     if (!trimmed || activeThreadId === null || streaming) return;
+    // Capture the thread this send belongs to. If the user switches threads
+    // before the SSE stream settles, activeThreadIdRef.current will diverge
+    // from sentThreadId and the callbacks below bail out of UI updates.
+    const sentThreadId = activeThreadId;
     setStreaming(true);
     setStreamingText("");
     setPendingUser(trimmed);
@@ -133,23 +144,31 @@ export default function ChatPanel({ discuss }: { discuss?: string | null }) {
     setDraft("");
     try {
       await streamSSE(
-        `/api/guru/chat/threads/${activeThreadId}/messages`,
+        `/api/guru/chat/threads/${sentThreadId}/messages`,
         { content: trimmed },
         {
-          onDelta: (text) => setStreamingText((prev) => prev + text),
+          onDelta: (text) => {
+            if (sentThreadId !== activeThreadIdRef.current) return;
+            setStreamingText((prev) => prev + text);
+          },
           onDone: () => {
-            qc.invalidateQueries({ queryKey: ["guru", "chat", "thread", activeThreadId] });
+            // The server persisted the message regardless of which thread is
+            // active now, so the thread's own query must still be invalidated.
+            qc.invalidateQueries({ queryKey: ["guru", "chat", "thread", sentThreadId] });
+            if (sentThreadId !== activeThreadIdRef.current) return;
             setStreaming(false);
             setStreamingText("");
             setPendingUser(null);
           },
           onError: (detail) => {
+            if (sentThreadId !== activeThreadIdRef.current) return;
             setStreaming(false);
             setSendError(detail);
           },
         },
       );
     } catch (e) {
+      if (sentThreadId !== activeThreadIdRef.current) return;
       setStreaming(false);
       setSendError(e instanceof ApiError ? e.message : "Something went wrong.");
     }

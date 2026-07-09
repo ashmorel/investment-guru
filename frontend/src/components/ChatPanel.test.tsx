@@ -175,6 +175,106 @@ describe("ChatPanel", () => {
     expect(postedBody).toEqual({ title: "REDUCE NVDA", seed_context: idea });
   });
 
+  it("guards stale streaming callbacks after the user switches threads mid-send", async () => {
+    mockApi();
+
+    // Capture the handlers streamSSE was given for thread A's send so we can
+    // fire them late, after the user has already switched to thread B — this
+    // reproduces callbacks racing a thread switch.
+    let captured: {
+      onDelta: (text: string) => void;
+      onDone: (d: { message_id: number }) => void;
+      onError: (detail: string) => void;
+    } | null = null;
+    let resolveThreadA: () => void = () => {};
+    mockStreamSSE.mockImplementation(
+      (_path, _body, handlers) =>
+        new Promise<void>((resolve) => {
+          captured = handlers;
+          resolveThreadA = resolve;
+        }),
+    );
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <ChatPanel discuss={null} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Thread 2 ("REDUCE NVDA") is the newest thread and becomes active by default.
+    await screen.findByRole("button", { name: /reduce nvda/i });
+    await user.type(screen.getByLabelText(/message/i), "Thread A message");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(await screen.findByText("Thread A message")).toBeInTheDocument();
+    expect(captured).not.toBeNull();
+
+    // Switch to thread B ("General") before thread A's stream settles.
+    await user.click(screen.getByRole("button", { name: /^general$/i }));
+    expect(await screen.findByText(/ask the guru anything/i)).toBeInTheDocument();
+
+    // Now let thread A's late delta + done frames arrive.
+    await act(async () => {
+      captured?.onDelta("leaked from thread A");
+      captured?.onDone({ message_id: 99 });
+      resolveThreadA();
+    });
+
+    // Thread B's UI must not be corrupted by A's late callbacks.
+    expect(screen.queryByText(/leaked from thread A/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/streaming…/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    // `streaming` must have been reset to false for thread B, not left stuck
+    // true by a stale onDone guard — typing a new draft re-enables Send.
+    await user.type(screen.getByLabelText(/message/i), "Thread B message");
+    expect(screen.getByRole("button", { name: /^send$/i })).not.toBeDisabled();
+
+    // The server did persist A's message, so its own thread query still gets
+    // invalidated even though it's no longer the active thread.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["guru", "chat", "thread", 2] });
+  });
+
+  it("guards a stale error frame after a thread switch, avoiding a misattributed retry banner", async () => {
+    mockApi();
+
+    let captured: { onError: (detail: string) => void } | null = null;
+    let resolveThreadA: () => void = () => {};
+    mockStreamSSE.mockImplementation(
+      (_path, _body, handlers) =>
+        new Promise<void>((resolve) => {
+          captured = handlers;
+          resolveThreadA = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByRole("button", { name: /reduce nvda/i });
+    await user.type(screen.getByLabelText(/message/i), "Thread A message");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(await screen.findByText("Thread A message")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^general$/i }));
+    expect(await screen.findByText(/ask the guru anything/i)).toBeInTheDocument();
+
+    await act(async () => {
+      captured?.onError("llm_error");
+      resolveThreadA();
+    });
+
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/llm_error/i)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/message/i), "Thread B message");
+    expect(screen.getByRole("button", { name: /^send$/i })).not.toBeDisabled();
+  });
+
   it("has no detectable accessibility violations", async () => {
     mockApi();
     const { container } = renderPanel();
