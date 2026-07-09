@@ -5,6 +5,7 @@ import DashboardPage from "./pages/DashboardPage";
 import GuruPage from "./pages/GuruPage";
 import ImportWizardPage from "./pages/ImportWizardPage";
 import LoginPage from "./pages/LoginPage";
+import OrsoPage from "./pages/OrsoPage";
 import PortfolioDetailPage from "./pages/PortfolioDetailPage";
 import PortfoliosPage from "./pages/PortfoliosPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -28,16 +29,6 @@ function NavItem({ to, label }: { to: string; label: string }) {
   );
 }
 
-function DisabledNavItem({ label, note }: { label: string; note?: string }) {
-  return (
-    <li>
-      <span className="block cursor-not-allowed rounded-md px-3 py-2 text-muted" aria-disabled="true">
-        {label} {note && <span className="text-xs">({note})</span>}
-      </span>
-    </li>
-  );
-}
-
 function RequireAuth() {
   const me = useQuery({
     queryKey: ["me"],
@@ -54,7 +45,7 @@ function RequireAuth() {
           <NavItem to="/" label="Dashboard" />
           <NavItem to="/portfolios" label="Portfolios" />
           <NavItem to="/guru" label="Guru" />
-          <DisabledNavItem label="ORSO" note="Phase 4" />
+          <NavItem to="/orso" label="ORSO" />
           <NavItem to="/import" label="Import CSV" />
           <NavItem to="/settings" label="Settings" />
         </ul>
@@ -77,6 +68,7 @@ export default function App() {
             <Route path="/portfolios" element={<PortfoliosPage />} />
             <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
             <Route path="/guru" element={<GuruPage />} />
+            <Route path="/orso" element={<OrsoPage />} />
             <Route path="/import" element={<ImportWizardPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>

@@ -102,8 +102,15 @@ export interface PositionVerdict { symbol: string; action: GuruAction; convictio
 export interface ReviewPayload { positions: PositionVerdict[]; observations: string[]; watch_next: string[]; disclaimer: string; }
 export interface DigestPayload { earnings_this_week: { symbol: string; date: string | null; note: string }[]; movers: { symbol: string; note: string }[]; news_flags: { symbol: string | null; headline: string; comment: string }[]; summary: string; disclaimer: string; }
 export interface TakePayload { commentary: string; risks: { kind: string; note: string }[]; ideas: { symbol: string | null; action: GuruAction; conviction: Conviction; rationale: string }[]; disclaimer: string; }
-export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
+export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take" | "orso"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
 export interface InvestorProfile { risk_appetite: "cautious" | "balanced" | "adventurous"; horizon: "short" | "medium" | "long"; sector_interests: string[]; free_text: string; }
 export interface UsageSummary { by_mode: { mode: string; calls: number; input_tokens: number; output_tokens: number; est_cost_usd: string | null }[]; total_cost_30d: string | null; }
 export interface ChatThread { id: number; title: string; portfolio_id: number | null; created_at: string; }
 export interface ChatMessage { id: number; role: "user" | "assistant"; content: string; created_at: string; }
+
+export interface OrsoFundRow { id: number; code: string; name: string; asset_class: string; risk_rating: number; archived: boolean; units: string | null; contribution_pct: string | null; price: string | null; price_as_of: string | null; price_source: "hsbc" | "manual" | null; value_hkd: string | null; }
+export interface OrsoOverview { funds: OrsoFundRow[]; total_hkd: string; total_base: { currency: string; value: string } | null; projection: { rate: string; projected_pot: string; on_track: boolean | null; gap: string | null }[] | null; flags: { stale: string[]; unpriced: string[]; split_sum_off: boolean; goals_incomplete: boolean }; as_of: string; }
+export interface OrsoGoals { birth_year: number | null; retirement_target_age: number | null; retirement_target_pot: string | null; orso_monthly_contribution: string | null; }
+export type OrsoAction = "keep" | "increase" | "reduce" | "exit";
+export interface OrsoAdvicePayload { fund_verdicts: { code: string; action: OrsoAction; conviction: Conviction; rationale: string }[]; switch_plan: { from_code: string | null; to_code: string | null; note: string }[]; projection_comment: string; watch: string[]; disclaimer: string; }
+export interface OrsoSwitchLogEntry { id: number; changed_at: string; note: string | null; }

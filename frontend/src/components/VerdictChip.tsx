@@ -1,8 +1,11 @@
-import type { Conviction, GuruAction } from "../lib/types";
+import type { Conviction, GuruAction, OrsoAction } from "../lib/types";
 
-const TONE: Record<GuruAction, string> = {
+type ChipAction = GuruAction | OrsoAction;
+
+const TONE: Record<ChipAction, string> = {
   increase: "bg-gain/10 text-gain",
   hold: "border border-border bg-bg text-muted",
+  keep: "border border-border bg-bg text-muted",
   reduce: "bg-loss/10 text-loss",
   exit: "bg-loss/10 text-loss",
 };
@@ -12,7 +15,7 @@ export default function VerdictChip({
   conviction,
   symbol,
 }: {
-  action: GuruAction;
+  action: ChipAction;
   conviction: Conviction;
   symbol?: string;
 }) {
