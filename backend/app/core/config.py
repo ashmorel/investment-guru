@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,15 @@ class Settings(BaseSettings):
     orso_hsbc_client_secret: str = ""
 
     env: str = "dev"
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalise_db_url(cls, v: str) -> str:
+        if v.startswith("postgres://"):
+            return "postgresql+asyncpg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     @property
     def is_production(self) -> bool:

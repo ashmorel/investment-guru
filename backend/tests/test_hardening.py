@@ -97,3 +97,12 @@ async def test_seed_refuses_defaults_in_production(monkeypatch):
     from app.seed import main as seed_main
     with pytest.raises(RuntimeError):
         await seed_main()
+
+
+def test_database_url_normalised():
+    s = Settings(database_url="postgres://u:p@host:5432/db")
+    assert s.database_url.startswith("postgresql+asyncpg://")
+    s2 = Settings(database_url="postgresql://u:p@host:5432/db")
+    assert s2.database_url.startswith("postgresql+asyncpg://")
+    s3 = Settings(database_url="postgresql+asyncpg://u:p@host:5432/db")
+    assert s3.database_url == "postgresql+asyncpg://u:p@host:5432/db"
