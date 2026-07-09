@@ -1,7 +1,7 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -14,19 +14,33 @@ from app.models import OrsoFund, OrsoFundPrice
 # public unit-price widget at
 # https://www.hsbc.com.hk/orso/tool/wayfoong-multi-funding-system/unit-prices/
 # (discovered by inspecting that page's embedded widget config + bundled JS).
-# The client_id/client_secret pair below is the widget's own front-end config,
-# already shipped in that page's HTML to every visitor's browser — it is not a
-# privileged credential, just a header the reverse-proxy requires on requests.
+#
+# The client_id/client_secret pair the widget sends as request headers is the
+# widget's own front-end config, already shipped in that page's HTML/JS to
+# every visitor's browser — it is not a privileged credential, just a header
+# the reverse-proxy requires on requests. Even so, it is NOT hardcoded in this
+# file because this is a public repo: the values are read from Settings
+# (`orso_hsbc_client_id` / `orso_hsbc_client_secret`, env vars
+# ORSO_HSBC_CLIENT_ID / ORSO_HSBC_CLIENT_SECRET — see app/core/config.py) and
+# passed into HsbcFundCentreProvider by its caller.
+#
+# To find the current values yourself: open the unit-prices widget page above
+# in a browser, open devtools > Network, reload the page, and inspect the
+# request headers of the XHR to .../pensions-pws-fund-prices — client_id and
+# client_secret are sent as plain request headers on that call.
 _HSBC_BASE_URL = "https://rbwm-api.hsbc.com.hk"
 _HSBC_PRICES_PATH = (
     "/wpb-gpbw-mmw-hk-hbap-pa-wpp-market-data-prod-proxy/v0/v1/pensions-pws-fund-prices"
 )
-_HSBC_CLIENT_ID = "[REMOVED-HSBC-GATEWAY-VALUE]"
-_HSBC_CLIENT_SECRET = "[REMOVED-HSBC-GATEWAY-VALUE]"
 _HSBC_SCHEME_IDENTIFIER = "WMFS"
 _HSBC_PRODUCT = "ORSO"
 _HSBC_TIMEOUT = 10.0
 _HSBC_DATE_FORMAT = "%d/%m/%Y"
+
+# A fund is considered fresh (and skipped on refresh) if it already has a
+# price row fetched within this window, even when that row's as_of predates
+# today (e.g. weekends/holidays where the upstream source has no new price).
+_REFRESH_TTL = timedelta(hours=12)
 
 
 @dataclass(frozen=True)
@@ -45,8 +59,11 @@ def parse_fund_prices(raw: str) -> dict[str, PriceDTO]:
     by fund identifier. Entries with a non-finite, zero, or negative bid price
     (or a missing code/date) are dropped here so a bad upstream value never
     reaches OrsoFundPrice.price (mirrors the finite guards in
-    app.services.market_data.yahoo)."""
+    app.services.market_data.yahoo). Returns an empty dict (rather than
+    raising) if the JSON top level isn't the expected object shape."""
     payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        return {}
     result: dict[str, PriceDTO] = {}
     for block in payload.get("data", []):
         for entry in block.get("fundPriceList", []):
@@ -75,6 +92,10 @@ class HsbcFundCentreProvider(OrsoPriceProvider):
     one call regardless of which codes are asked for, so there is no
     per-code request to make."""
 
+    def __init__(self, client_id: str, client_secret: str):
+        self.client_id = client_id
+        self.client_secret = client_secret
+
     async def get_prices(self, codes: list[str]) -> dict[str, PriceDTO]:
         params = {
             "endDate": date.today().isoformat(),
@@ -82,8 +103,8 @@ class HsbcFundCentreProvider(OrsoPriceProvider):
             "product": _HSBC_PRODUCT,
         }
         headers = {
-            "client_id": _HSBC_CLIENT_ID,
-            "client_secret": _HSBC_CLIENT_SECRET,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
             "Accept": "application/json",
         }
         async with httpx.AsyncClient(timeout=_HSBC_TIMEOUT) as client:
@@ -114,24 +135,41 @@ class OrsoPriceService:
         self.provider = provider
 
     async def refresh(self, db: AsyncSession, funds: list[OrsoFund]) -> set[int]:
-        """Fetch and persist today's price for every fund not already priced
-        today. Never raises: a provider failure (or no provider) just leaves
-        the already-fresh subset as the result and prior rows untouched."""
+        """Fetch and persist a current price for every fund not already
+        fresh. A fund is fresh if it has a row for today, or if its most
+        recent row was fetched within `_REFRESH_TTL` (so weekends/holidays
+        with no new upstream price don't re-hit the network every call).
+        Never raises: a provider failure (or no provider) just leaves the
+        already-fresh subset as the result and prior rows untouched. Existing
+        rows with source "manual" are never overwritten."""
         if self.provider is None:
             return set()
 
         today = date.today()
+        now = datetime.now(UTC).replace(tzinfo=None)
         fresh: set[int] = set()
         stale: list[OrsoFund] = []
         for fund in funds:
-            row = (
+            today_row = (
                 await db.execute(
                     select(OrsoFundPrice).where(
                         OrsoFundPrice.fund_id == fund.id, OrsoFundPrice.as_of == today
                     )
                 )
             ).scalar_one_or_none()
-            if row is not None:
+            if today_row is not None:
+                fresh.add(fund.id)
+                continue
+
+            most_recent = (
+                await db.execute(
+                    select(OrsoFundPrice)
+                    .where(OrsoFundPrice.fund_id == fund.id)
+                    .order_by(OrsoFundPrice.fetched_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if most_recent is not None and (now - most_recent.fetched_at) < _REFRESH_TTL:
                 fresh.add(fund.id)
             else:
                 stale.append(fund)
@@ -144,7 +182,6 @@ class OrsoPriceService:
         except Exception:
             return fresh
 
-        now = datetime.now(UTC).replace(tzinfo=None)
         for fund in stale:
             dto = prices.get(fund.code)
             if dto is None:
@@ -161,6 +198,9 @@ class OrsoPriceService:
                     fund_id=fund.id, price=dto.price, as_of=dto.as_of,
                     source="hsbc", fetched_at=now,
                 ))
+            elif existing.source == "manual":
+                # never overwrite a manually-entered price
+                pass
             else:
                 existing.price = dto.price
                 existing.source = "hsbc"

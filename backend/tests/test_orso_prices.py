@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -62,6 +62,11 @@ def test_parse_fund_prices_drops_non_finite_zero_and_negative():
 
 def test_parse_fund_prices_empty_payload_returns_empty_dict():
     assert parse_fund_prices('{"data":[]}') == {}
+
+
+@pytest.mark.parametrize("raw", ["[]", "42"])
+def test_parse_fund_prices_non_dict_top_level_returns_empty_dict(raw):
+    assert parse_fund_prices(raw) == {}
 
 
 # --- FakeOrsoPriceProvider ----------------------------------------------
@@ -149,6 +154,84 @@ async def test_refresh_skips_funds_already_priced_today(db_session):
 
     assert refreshed == {fresh_fund.id, stale_fund.id}
     assert provider.calls == [["STALE"]]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_refresh_ttl_skips_recently_fetched_fund_with_stale_as_of(db_session):
+    u = await _user(db_session)
+    fund = await _fund(db_session, u.id, "HK-EQ")
+    yesterday = date.today() - timedelta(days=1)
+    fetched_1h_ago = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+    db_session.add(OrsoFundPrice(
+        fund_id=fund.id, price=Decimal("5.0000"), as_of=yesterday,
+        source="hsbc", fetched_at=fetched_1h_ago,
+    ))
+    await db_session.commit()
+
+    provider = FakeOrsoPriceProvider(
+        prices={"HK-EQ": PriceDTO(price=Decimal("99.0000"), as_of=date.today())}
+    )
+    svc = OrsoPriceService(provider)
+    refreshed = await svc.refresh(db_session, [fund])
+    await db_session.commit()
+
+    assert refreshed == {fund.id}
+    assert provider.calls == []
+    prices = await svc.latest_prices(db_session, [fund.id])
+    assert prices[fund.id].price == Decimal("5.0000")
+    assert prices[fund.id].as_of == yesterday
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_refresh_refetches_fund_when_ttl_expired(db_session):
+    u = await _user(db_session)
+    fund = await _fund(db_session, u.id, "HK-EQ")
+    yesterday = date.today() - timedelta(days=1)
+    fetched_13h_ago = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=13)
+    db_session.add(OrsoFundPrice(
+        fund_id=fund.id, price=Decimal("5.0000"), as_of=yesterday,
+        source="hsbc", fetched_at=fetched_13h_ago,
+    ))
+    await db_session.commit()
+
+    today = date.today()
+    provider = FakeOrsoPriceProvider(
+        prices={"HK-EQ": PriceDTO(price=Decimal("99.0000"), as_of=today)}
+    )
+    svc = OrsoPriceService(provider)
+    refreshed = await svc.refresh(db_session, [fund])
+    await db_session.commit()
+
+    assert refreshed == {fund.id}
+    assert provider.calls == [["HK-EQ"]]
+    prices = await svc.latest_prices(db_session, [fund.id])
+    assert prices[fund.id].price == Decimal("99.0000")
+    assert prices[fund.id].as_of == today
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_refresh_does_not_overwrite_manual_price_for_same_date(db_session):
+    u = await _user(db_session)
+    fund = await _fund(db_session, u.id, "HK-EQ")
+    manual_date = date.today() - timedelta(days=1)
+    svc = OrsoPriceService(None)
+    manual = await svc.upsert_manual_price(db_session, fund, Decimal("10.0000"), manual_date)
+    await db_session.commit()
+    # Backdate fetched_at past the TTL so refresh actually attempts a fetch.
+    manual.fetched_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=13)
+    await db_session.commit()
+
+    provider = FakeOrsoPriceProvider(
+        prices={"HK-EQ": PriceDTO(price=Decimal("77.0000"), as_of=manual_date)}
+    )
+    svc = OrsoPriceService(provider)
+    refreshed = await svc.refresh(db_session, [fund])
+    await db_session.commit()
+
+    assert refreshed == {fund.id}
+    prices = await svc.latest_prices(db_session, [fund.id])
+    assert prices[fund.id].price == Decimal("10.0000")
+    assert prices[fund.id].source == "manual"
 
 
 @pytest.mark.asyncio(loop_scope="session")

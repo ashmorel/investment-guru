@@ -19,5 +19,12 @@ class Settings(BaseSettings):
     # endpoint for HSBC WMFS ORSO fund prices — see app/services/orso/prices.py.
     orso_price_fetch_enabled: bool = True
 
+    # HSBC WMFS unit-price widget's own front-end gateway headers (public,
+    # browser-visible — not a privileged credential). Empty defaults mean "no
+    # provider configured". See app/services/orso/prices.py for how to find
+    # the current values.
+    orso_hsbc_client_id: str = ""
+    orso_hsbc_client_secret: str = ""
+
 
 settings = Settings()
