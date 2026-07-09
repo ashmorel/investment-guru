@@ -12,10 +12,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, SessionDep
-from app.api.guru import get_profile_row
+from app.api.guru import GuruDep, ReportOut, _report_out, get_profile_row, map_guru_errors
 from app.api.valuation import get_services
 from app.core.config import settings
-from app.models import InvestorProfile, OrsoAllocation, OrsoFund, OrsoSwitchLog
+from app.models import GuruReport, InvestorProfile, OrsoAllocation, OrsoFund, OrsoSwitchLog
 from app.services.market_data.quotes import get_quote_service
 from app.services.orso.prices import (
     HsbcFundCentreProvider,
@@ -495,3 +495,37 @@ async def overview(db: SessionDep, user: CurrentUser, prices: OrsoPriceDep,
                    services: Annotated[tuple, Depends(get_services)]):
     _quotes, fx = services
     return await build_overview(db, user, prices, fx)
+
+
+# --- switching advice (Guru ORSO mode) --------------------------------------
+
+class AdviceList(BaseModel):
+    reports: list[ReportOut]
+
+
+@router.post("/advice", response_model=ReportOut, status_code=201)
+async def create_advice(db: SessionDep, user: CurrentUser, guru: GuruDep, prices: OrsoPriceDep,
+                        services: Annotated[tuple, Depends(get_services)]):
+    _quotes, fx = services
+    with map_guru_errors():
+        report = await guru.generate_orso(db, user, prices, fx)
+    return _report_out(report)
+
+
+@router.get("/advice/latest", response_model=ReportOut)
+async def read_latest_advice(db: SessionDep, user: CurrentUser):
+    r = (await db.execute(select(GuruReport).where(
+        GuruReport.user_id == user.id, GuruReport.kind == "orso"
+    ).order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(1))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _report_out(r)
+
+
+@router.get("/advice", response_model=AdviceList)
+async def list_advice(db: SessionDep, user: CurrentUser, limit: int = 20):
+    rows = (await db.execute(
+        select(GuruReport).where(GuruReport.user_id == user.id, GuruReport.kind == "orso")
+        .order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(limit)
+    )).scalars().all()
+    return AdviceList(reports=[_report_out(r) for r in rows])

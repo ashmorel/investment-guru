@@ -59,3 +59,24 @@ class TakePayload(BaseModel):
     risks: list[RiskItem]
     ideas: list[IdeaItem]
     disclaimer: str
+
+
+class FundVerdict(BaseModel):
+    code: str
+    action: Literal["keep", "increase", "reduce", "exit"]
+    conviction: Literal["low", "med", "high"]
+    rationale: str
+
+
+class SwitchStep(BaseModel):
+    from_code: str | None
+    to_code: str | None
+    note: str
+
+
+class OrsoAdvicePayload(BaseModel):
+    fund_verdicts: list[FundVerdict]
+    switch_plan: list[SwitchStep]
+    projection_comment: str
+    watch: list[str]
+    disclaimer: str

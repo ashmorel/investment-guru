@@ -12,9 +12,23 @@ from app.services.guru.context import build_context
 from app.services.guru.llm.anthropic import AnthropicProvider
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
-from app.services.guru.schemas import DigestPayload, ReviewPayload, TakePayload
+from app.services.guru.schemas import DigestPayload, OrsoAdvicePayload, ReviewPayload, TakePayload
 from app.services.market_data.quotes import QuoteService
+from app.services.orso.prices import OrsoPriceService
 from app.services.valuation import FxService
+
+_ORSO_INSTRUCTION = (
+    "Advise on ORSO fund switching for this pension. Only reference fund codes from the "
+    "fund menu provided. Give a verdict for every fund currently holding units, a concrete "
+    "switch plan, and comment on the retirement projection."
+)
+
+
+def _orso_invalid_codes(payload: OrsoAdvicePayload, fund_menu: set[str]) -> set[str]:
+    codes = {v.code for v in payload.fund_verdicts}
+    codes |= {s.from_code for s in payload.switch_plan if s.from_code is not None}
+    codes |= {s.to_code for s in payload.switch_plan if s.to_code is not None}
+    return codes - fund_menu
 
 
 class GenerationInProgress(Exception):
@@ -85,6 +99,52 @@ class GuruService:
             db.add(report)
             await db.flush()
             await usage_mod.record_usage(db, user_id=user.id, mode="review",
+                                         model=settings.guru_advice_model,
+                                         usage=usage, report_id=report.id)
+            await db.commit()
+            return report
+
+    async def generate_orso(self, db: AsyncSession, user: User,
+                            price_service: OrsoPriceService,
+                            fx_service: FxService | None = None) -> GuruReport:
+        from app.services.orso.context import build_orso_context
+
+        provider = self._require_provider()
+        lock = self._lock("orso")
+        if lock.locked():
+            raise GenerationInProgress("orso")
+        async with lock:
+            ctx = await build_orso_context(db, user, price_service, fx_service)
+            fund_menu = set(ctx["fund_menu"])
+            messages = [{"role": "user", "content":
+                         _ORSO_INSTRUCTION + "\n\n" + json.dumps(ctx)}]
+            payload, usage = await provider.generate_structured(
+                system=PERSONA_V1, messages=messages, schema=OrsoAdvicePayload,
+                model=settings.guru_advice_model, max_tokens=4096)
+            invalid = _orso_invalid_codes(payload, fund_menu)
+            if invalid:
+                messages += [
+                    {"role": "assistant", "content": payload.model_dump_json()},
+                    {"role": "user", "content":
+                     f"These fund codes are not valid: {sorted(invalid)}. "
+                     f"Allowed fund codes are: {sorted(fund_menu)}. Return the complete "
+                     "advice again, using only allowed fund codes."},
+                ]
+                first_usage = usage
+                payload, usage = await provider.generate_structured(
+                    system=PERSONA_V1, messages=messages, schema=OrsoAdvicePayload,
+                    model=settings.guru_advice_model, max_tokens=4096)
+                usage = Usage(input_tokens=first_usage.input_tokens + usage.input_tokens,
+                              output_tokens=first_usage.output_tokens + usage.output_tokens)
+                invalid = _orso_invalid_codes(payload, fund_menu)
+                if invalid:
+                    raise LLMError(f"orso advice referenced invalid fund codes: {sorted(invalid)}")
+            report = GuruReport(user_id=user.id, kind="orso", portfolio_id=None,
+                                payload=payload.model_dump(),
+                                model=settings.guru_advice_model, created_at=_now())
+            db.add(report)
+            await db.flush()
+            await usage_mod.record_usage(db, user_id=user.id, mode="orso",
                                          model=settings.guru_advice_model,
                                          usage=usage, report_id=report.id)
             await db.commit()
