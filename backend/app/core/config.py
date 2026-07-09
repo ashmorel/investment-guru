@@ -26,5 +26,11 @@ class Settings(BaseSettings):
     orso_hsbc_client_id: str = ""
     orso_hsbc_client_secret: str = ""
 
+    env: str = "dev"
+
+    @property
+    def is_production(self) -> bool:
+        return self.env == "production"
+
 
 settings = Settings()

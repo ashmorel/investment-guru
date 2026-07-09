@@ -13,6 +13,8 @@ from app.api.portfolios import router as portfolios_router
 from app.api.positions import router as positions_router
 from app.api.signals import router as signals_router
 from app.api.valuation import router as valuation_router
+from app.core.config import settings
+from app.core.hardening import SecurityHeadersMiddleware, validate_production_settings
 
 logger = logging.getLogger("app.main")
 
@@ -41,7 +43,9 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    validate_production_settings(settings)
     app = FastAPI(title="Investment Guru", lifespan=lifespan)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, SessionDep
 from app.api.instruments import get_provider
 from app.api.portfolios import get_owned_portfolio
+from app.core.hardening import MAX_UPLOAD_BYTES
 from app.models import Instrument, Portfolio, Position
 from app.schemas.imports import ImportCommitIn, ImportCommitOut
 from app.services.csv_import import CsvFormatError, parse_yahoo_csv
@@ -41,6 +42,8 @@ async def preview(
     provider: Annotated[MarketDataProvider, Depends(get_provider)],
 ):
     data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="upload_too_large")
     try:
         parsed = parse_yahoo_csv(data)
     except CsvFormatError as exc:

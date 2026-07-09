@@ -47,6 +47,12 @@ async def seed_orso_funds(db, user_id: int) -> int:
 
 
 async def main() -> None:
+    if settings.is_production and (
+        settings.initial_user_email == "you@example.com"
+        or settings.initial_user_password == "change-me"
+    ):
+        raise RuntimeError("Set real INITIAL_USER_EMAIL/INITIAL_USER_PASSWORD in production")
+
     async with SessionLocal() as db:
         existing = await db.execute(select(User).where(User.email == settings.initial_user_email))
         user = existing.scalar_one_or_none()

@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.config import settings
+from app.core.hardening import login_throttle
 from app.core.security import SESSION_MAX_AGE_SECONDS, sign_session, verify_password
 from app.models.user import User
 
@@ -21,16 +23,20 @@ class MeOut(BaseModel):
 
 @router.post("/login", status_code=204)
 async def login(body: LoginIn, response: Response, db: SessionDep) -> None:
+    login_throttle.check(body.email)
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(body.password, user.password_hash):
+        login_throttle.record_failure(body.email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    login_throttle.record_success(body.email)
     response.set_cookie(
         "session",
         sign_session(user.id),
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
         samesite="lax",
+        secure=settings.is_production,
     )
 
 
