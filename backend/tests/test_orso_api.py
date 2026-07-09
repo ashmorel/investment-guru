@@ -160,6 +160,35 @@ async def test_allocation_rejects_foreign_fund(orso_client, db_session):
     assert resp.status_code == 422
 
 
+async def test_allocation_rejects_archived_fund_with_units(orso_client, db_session):
+    user = await _current_user(db_session)
+    fund = await _seed_fund(db_session, user.id, "ARC", archived=True)
+    resp = await orso_client.put("/api/orso/allocation", json={"allocations": [
+        {"fund_id": fund.id, "units": "1", "contribution_pct": "50"}]})
+    assert resp.status_code == 422 and resp.json()["detail"] == "fund_archived"
+    # Verify nothing was persisted
+    allocs = (await db_session.execute(select(OrsoAllocation))).scalars().all()
+    assert len(allocs) == 0
+    logs = (await db_session.execute(select(OrsoSwitchLog))).scalars().all()
+    assert len(logs) == 0
+
+
+async def test_allocation_allows_archived_fund_with_zero_units(orso_client, db_session):
+    user = await _current_user(db_session)
+    normal = await _seed_fund(db_session, user.id, "NORM")
+    archived = await _seed_fund(db_session, user.id, "ARC", archived=True)
+    resp = await orso_client.put("/api/orso/allocation", json={"allocations": [
+        {"fund_id": normal.id, "units": "10", "contribution_pct": "100"},
+        {"fund_id": archived.id, "units": "0", "contribution_pct": "0"},
+    ], "note": "clear archived"})
+    assert resp.status_code == 200
+    allocs = (await db_session.execute(select(OrsoAllocation))).scalars().all()
+    assert len(allocs) == 2
+    logs = (await db_session.execute(select(OrsoSwitchLog))).scalars().all()
+    assert len(logs) == 1
+    assert logs[0].note == "clear archived"
+
+
 # --- prices ----------------------------------------------------------------
 
 async def test_manual_price_upsert(orso_client, db_session):

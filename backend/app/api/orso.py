@@ -219,12 +219,20 @@ async def replace_allocation(body: AllocationReplace, db: SessionDep, user: Curr
     fund_ids = [a.fund_id for a in body.allocations]
     if len(set(fund_ids)) != len(fund_ids):
         raise HTTPException(status_code=422, detail="duplicate_fund_id")
-    funds: dict[int, OrsoFund] = {}
+
+    # Batch fetch all referenced funds in one query
+    fund_rows = (await db.execute(
+        select(OrsoFund).where(OrsoFund.id.in_(fund_ids))
+    )).scalars().all()
+    funds: dict[int, OrsoFund] = {f.id: f for f in fund_rows}
+
+    # Validate: each fund exists, belongs to the user, and isn't archived with units > 0
     for a in body.allocations:
-        fund = await db.get(OrsoFund, a.fund_id)
+        fund = funds.get(a.fund_id)
         if fund is None or fund.user_id != user.id:
             raise HTTPException(status_code=422, detail="unknown_fund_id")
-        funds[a.fund_id] = fund
+        if fund.archived and a.units > 0:
+            raise HTTPException(status_code=422, detail="fund_archived")
 
     previous = _canonical(await _current_alloc_entries(db, user.id))
 
