@@ -56,12 +56,42 @@ Or click **Run analysis** on the dashboard / a portfolio page.
 ### Verified end-to-end (2026-07-08)
 Live smoke against real yfinance + RSS: login → GBP portfolio → AAPL/HSBA.L/0700.HK → `analyze` returned `price_move_week`, `concentration` (name + sector), and `fx_exposure` signals with plausible figures; the attention endpoint returned them severity-ranked. The RSS news feed was down during the run and degraded correctly (HTTP 200, `unavailable_inputs: ["news"]`, other signals still emitted). Backend 91 tests + ruff clean; frontend 11 tests + `npm run check` clean.
 
+## Phase 2b — the Guru: COMPLETE
+
+The judgment layer on top of the Phase 2a signals engine. A provider-agnostic LLM layer (`app/services/guru/llm/`, Anthropic first) receives *profile + valuations + stored signals* assembled by a shared `ContextBuilder` and returns schema-validated structured output; chat is the only free-text path. Signals stay deterministic code — the LLM never fetches data itself. No API key → Guru endpoints return `503 llm_unconfigured`, the UI shows a "not configured" banner, and everything else keeps working.
+
+### Models & config (`app/core/config.py`)
+`guru_advice_model` (default `claude-opus-4-8`: reviews, Guru's take, chat) and `guru_scan_model` (default `claude-haiku-4-5`: daily digest); `anthropic_api_key`; `guru_digest_hour` + `guru_timezone` for the scheduler. Model swaps are config edits.
+
+### Endpoints (all `/api/guru/*`, auth + ownership)
+- **Profile** — `GET/PUT /profile` (risk appetite, horizon, sector interests, free text; upsert).
+- **Reviews** — `POST /reviews {portfolio_id}` (per-position verdict hold/increase/reduce/exit + conviction + rationale, portfolio observations, watch-next; a post-parse check forces coverage of every position with one corrective retry), `GET /reviews[?portfolio_id=]`, `GET /reviews/{id}`. Versioned history = rows.
+- **Digest** — `GET /digest/latest`, `POST /digest` (scan model: earnings this week, movers, news flags, summary).
+- **Guru's take** — `GET /take/latest`, `POST /take` (advice model; sees the latest digest; commentary, risks, rebalance ideas).
+- **Chat** — `GET/POST /chat/threads`, `GET /chat/threads/{id}`, `POST /chat/threads/{id}/messages` → **SSE stream** (`delta`/`done`/`error` frames); user message persists immediately, assistant message only on stream completion. "Discuss" links seed threads from take ideas.
+- **Usage** — `GET /usage/summary` (per-mode calls/tokens/estimated cost + 30-day total; every LLM call writes an `llm_usage` row).
+
+Errors map to `503 llm_unconfigured` / `409 generation_in_progress` (per-kind in-flight lock) / `502 llm_error` (nothing persisted on failure).
+
+### Scheduler (APScheduler, FastAPI lifespan)
+Daily job at `guru_digest_hour` in `guru_timezone`: digest → take. **Startup catch-up**: on boot, generates whatever is missing for "today" (digest+take, or just a missing take after a partial failure); never raises — no key or provider failure logs and moves on. Phase 5 (always-on cloud) inherits this unchanged.
+
+### Frontend
+- **Guru page** — Guru's-take card, daily-digest card, portfolio reviews (run-review per portfolio, history, per-position `VerdictChip`s + observations), chat panel (thread pills, optimistic bubbles, token-by-token streaming via `src/lib/sse.ts`, thread-switch-safe).
+- **Dashboard** — `GuruTakePanel` fills the reserved slot (refresh, staleness label, discuss links, unconfigured banner).
+- **Portfolio detail** — per-position take column derived from the latest review (no extra LLM call) with an ask-in-chat link.
+- **Settings** — investor profile form (segmented risk control, horizon, sector chips, free text) + usage/cost readout.
+Screens match the approved Figma mocks (file `0gU58wfjttdZS0NXQeEtuD`, frames 05–07).
+
+### Verified end-to-end (2026-07-09)
+Live smoke with a real Anthropic key: boot ran the startup catch-up and generated a real Haiku digest + Opus 4.8 take (grounded in actual valuations — flagged the 79% AAPL concentration and watchlist-only holdings correctly); portfolio review covered all 3 positions with verdicts; chat streamed 15 SSE delta frames and persisted both turns; a backend restart correctly did **not** regenerate (catch-up idempotent per day); `usage/summary` showed all four modes totalling ≈$0.11. Browser pass over the Vite dev server confirmed the Guru page, dashboard take panel and chat render with the live data. Backend 145 tests + ruff clean; frontend 50 tests + `npm run check` clean.
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433
 cd backend && source .venv/bin/activate
 alembic upgrade head && python -m app.seed   # seeds you@example.com / change-me
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000    # ANTHROPIC_API_KEY in backend env file enables the Guru
 # in another shell:
 cd frontend && npm install && npm run dev    # Vite dev server, proxies /api
 ```
