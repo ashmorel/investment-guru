@@ -86,6 +86,56 @@ Screens match the approved Figma mocks (file `0gU58wfjttdZS0NXQeEtuD`, frames 05
 ### Verified end-to-end (2026-07-09)
 Live smoke with a real Anthropic key: boot ran the startup catch-up and generated a real Haiku digest + Opus 4.8 take (grounded in actual valuations — flagged the 79% AAPL concentration and watchlist-only holdings correctly); portfolio review covered all 3 positions with verdicts; chat streamed 15 SSE delta frames and persisted both turns; a backend restart correctly did **not** regenerate (catch-up idempotent per day); `usage/summary` showed all four modes totalling ≈$0.11. Browser pass over the Vite dev server confirmed the Guru page, dashboard take panel and chat render with the live data. Backend 145 tests + ruff clean; frontend 50 tests + `npm run check` clean.
 
+## Phase 4 — ORSO environment: COMPLETE
+
+A distinct HK pension area for the HSBC ORSO (WMFS) scheme — never mixed with
+trading portfolios, absent from the daily digest/take. Data model (migration
+0006): `orso_funds` (menu, seeded with the real 14-fund WMFS HKD menu),
+`orso_allocations` (snapshot), `orso_switch_log` (auto-written on every real
+allocation change), `orso_fund_prices` (HKD NAVs, `hsbc`|`manual` source);
+retirement-goal columns on the investor profile; `chat_threads.scope`.
+
+### Pricing
+`OrsoPriceProvider` abstraction; **discovery found a real unauthenticated HSBC
+fund-price JSON endpoint** (WMFS scheme) — the parser is tested against a
+genuine captured fixture. The two API-gateway values HSBC's own page uses go in
+`ORSO_HSBC_CLIENT_ID`/`ORSO_HSBC_CLIENT_SECRET` (see `.env.example`; visible in
+the fund-centre page's devtools network tab); without them the fetcher is
+simply absent and `POST /prices/refresh` returns `{unavailable: true}`. Manual
+price entry is first-class and permanent. Refresh: 12h TTL, per-day upsert,
+never overwrites a manual row, never raises.
+
+### Projection (`app/services/orso/projection.py`)
+Pure Decimal future-value maths — pot + monthly contributions compounded
+monthly to target age under fixed 2%/5%/8% scenarios; on-track verdict + gap vs
+target pot. Maths is code; the Guru only comments on it.
+
+### Endpoints (`/api/orso/*`, auth + ownership)
+Funds list/create/edit/archive (409 `fund_has_units` archiving a holding fund;
+422 `fund_archived` allocating into one) · allocation GET/PUT (full replace,
+writes one switch-log row per real change) · `GET /switchlog` · goals GET/PUT ·
+prices refresh/manual · `GET /overview` (per-fund values, HKD total + GBP line
+via FxService, projection, flags `{stale, unpriced, split_sum_off,
+goals_incomplete}`) · advice POST/latest/list (`kind="orso"` in `guru_reports`,
+advice model, per-kind lock, fund-code validity check with one corrective
+retry) · ORSO-scoped chat (`scope="orso"` threads get ORSO context).
+
+### Frontend
+ORSO page per the approved Figma (file `0gU58wfjttdZS0NXQeEtuD` frame 08):
+allocation table with stale badges + inline manual price edit + refresh (auto-
+disables to "manual prices only" when unavailable), goals + three projection
+bars, switching-advice card (verdict chips incl. `keep`, switch plan,
+discuss→ORSO chat), switch log.
+
+### Verified end-to-end (2026-07-09)
+Live smoke: seeded real menu; allocation + note → switch log; manual prices;
+overview HK$1,847,478 ≈ £175,824 (live FX); projections on-track; refresh
+degraded gracefully without gateway creds; real Opus switching advice
+(verdicts on valid codes only — it even flagged that its proposed destination
+fund was unpriced); ORSO chat streamed with scheme context; usage rows
+`mode="orso"`. Backend 210 tests + ruff clean; frontend 62 tests + `npm run
+check` clean.
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433

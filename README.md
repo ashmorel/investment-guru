@@ -8,7 +8,9 @@ Phase 1 (portfolio core) complete — portfolios/watchlists, Yahoo CSV import, l
 
 Phase 2a (signals engine) complete — deterministic analysis (earnings, price/volume moves, 52-week, concentration, FX exposure, news) with a stored snapshot and live dashboard attention flags.
 
-Phase 2b (the Guru) complete — investor profile, provider-agnostic LLM layer (Anthropic first; advice model Opus 4.8, scan model Haiku 4.5, both config-swappable), on-demand portfolio reviews with per-position verdicts, scheduled daily digest with startup catch-up, dashboard "Guru's take" panel, per-position takes, SSE-streamed chat, and per-call usage/cost logging. Signals stay deterministic code; the LLM only judges what the data layer hands it. Without an API key everything else keeps working and Guru surfaces show a "not configured" state. Next: Phase 4 (ORSO). Progress detail: `docs/PROGRESS.md`.
+Phase 2b (the Guru) complete — investor profile, provider-agnostic LLM layer (Anthropic first; advice model Opus 4.8, scan model Haiku 4.5, both config-swappable), on-demand portfolio reviews with per-position verdicts, scheduled daily digest with startup catch-up, dashboard "Guru's take" panel, per-position takes, SSE-streamed chat, and per-call usage/cost logging. Signals stay deterministic code; the LLM only judges what the data layer hands it. Without an API key everything else keeps working and Guru surfaces show a "not configured" state.
+
+Phase 4 (ORSO) complete — HK pension environment for the HSBC ORSO (WMFS) scheme: real fund menu (seeded from the scheme's own price feed), manual allocation snapshot with an automatic switch log, HKD fund pricing (live HSBC fund-centre fetcher when `ORSO_HSBC_CLIENT_ID`/`SECRET` are set, manual entry always available), retirement goals with deterministic 2/5/8% projections, and a Guru switching-advice mode restricted to your own fund menu. Next: Phase 5 (cloud). Progress detail: `docs/PROGRESS.md`.
 
 ## Local setup
 ```bash
