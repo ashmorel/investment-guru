@@ -159,3 +159,15 @@ async def guru_client(auth_client, fake_llm) -> httpx.AsyncClient:
     auth_client.fake_llm = fake_llm
     auth_client.guru_service = svc
     return auth_client
+
+
+@pytest_asyncio.fixture
+async def orso_client(guru_client) -> httpx.AsyncClient:
+    from app.api.orso import get_orso_prices
+    from app.services.orso.prices import FakeOrsoPriceProvider, OrsoPriceService
+
+    fake = FakeOrsoPriceProvider()
+    service = OrsoPriceService(fake)
+    guru_client.app.dependency_overrides[get_orso_prices] = lambda: service
+    guru_client.fake_orso_prices = fake
+    return guru_client

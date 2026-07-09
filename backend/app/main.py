@@ -8,6 +8,7 @@ from app.api.auth import router as auth_router
 from app.api.guru import router as guru_router
 from app.api.imports import router as imports_router
 from app.api.instruments import router as instruments_router
+from app.api.orso import router as orso_router
 from app.api.portfolios import router as portfolios_router
 from app.api.positions import router as positions_router
 from app.api.signals import router as signals_router
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(guru_router)
     app.include_router(imports_router)
     app.include_router(instruments_router)
+    app.include_router(orso_router)
     app.include_router(portfolios_router)
     app.include_router(positions_router)
     app.include_router(signals_router)
