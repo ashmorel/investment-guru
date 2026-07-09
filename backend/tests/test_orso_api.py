@@ -189,6 +189,32 @@ async def test_allocation_allows_archived_fund_with_zero_units(orso_client, db_s
     assert logs[0].note == "clear archived"
 
 
+async def test_switch_log_lists_newest_first(orso_client, db_session):
+    user = await _current_user(db_session)
+    f1 = await _seed_fund(db_session, user.id, "A")
+    await orso_client.put("/api/orso/allocation", json={"allocations": [
+        {"fund_id": f1.id, "units": "10", "contribution_pct": "100"}], "note": "first"})
+    await orso_client.put("/api/orso/allocation", json={"allocations": [
+        {"fund_id": f1.id, "units": "20", "contribution_pct": "100"}], "note": "second"})
+    resp = await orso_client.get("/api/orso/switchlog")
+    assert resp.status_code == 200
+    entries = resp.json()["entries"]
+    assert [e["note"] for e in entries] == ["second", "first"]
+    assert all("changed_at" in e and "id" in e for e in entries)
+
+
+async def test_switch_log_ownership_isolated(orso_client, db_session):
+    other = User(email="other-switchlog@test.dev", password_hash="x")
+    db_session.add(other)
+    await db_session.commit()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    db_session.add(OrsoSwitchLog(user_id=other.id, changed_at=now,
+                                 old_state=[], new_state=[], note="not mine"))
+    await db_session.commit()
+    resp = await orso_client.get("/api/orso/switchlog")
+    assert resp.json()["entries"] == []
+
+
 # --- prices ----------------------------------------------------------------
 
 async def test_manual_price_upsert(orso_client, db_session):

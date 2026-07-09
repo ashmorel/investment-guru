@@ -172,6 +172,29 @@ async def _current_alloc_entries(
     return [(code, units, pct) for code, units, pct in rows]
 
 
+class SwitchLogEntryOut(BaseModel):
+    id: int
+    changed_at: str
+    note: str | None
+
+
+class SwitchLogList(BaseModel):
+    entries: list[SwitchLogEntryOut]
+
+
+@router.get("/switchlog", response_model=SwitchLogList)
+async def list_switch_log(db: SessionDep, user: CurrentUser, limit: int = 20):
+    rows = (await db.execute(
+        select(OrsoSwitchLog).where(OrsoSwitchLog.user_id == user.id)
+        .order_by(OrsoSwitchLog.changed_at.desc(), OrsoSwitchLog.id.desc())
+        .limit(limit)
+    )).scalars().all()
+    return SwitchLogList(entries=[
+        SwitchLogEntryOut(id=r.id, changed_at=r.changed_at.isoformat(), note=r.note)
+        for r in rows
+    ])
+
+
 @router.get("/allocation", response_model=list[AllocationOut])
 async def read_allocation(db: SessionDep, user: CurrentUser):
     rows = (await db.execute(
