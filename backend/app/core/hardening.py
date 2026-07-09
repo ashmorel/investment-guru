@@ -24,7 +24,11 @@ def validate_production_settings(settings: Settings) -> None:
 
 
 class LoginThrottle:
-    """Per-email consecutive-failure lockout. Single-process state (single replica)."""
+    """Per-email consecutive-failure lockout. Single-process state (single replica).
+
+    Unbounded growth of per-email dicts under bogus-email spray is accepted for
+    this single-user, single-process deployment (no eviction by design).
+    """
 
     def __init__(self, clock: Callable[[], float] = time.monotonic):
         self._clock = clock

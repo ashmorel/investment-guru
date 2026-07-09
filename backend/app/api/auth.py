@@ -42,7 +42,12 @@ async def login(body: LoginIn, response: Response, db: SessionDep) -> None:
 
 @router.post("/logout", status_code=204)
 async def logout(response: Response) -> None:
-    response.delete_cookie("session")
+    response.delete_cookie(
+        "session",
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+    )
 
 
 @router.get("/me", response_model=MeOut)
