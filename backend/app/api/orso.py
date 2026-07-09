@@ -110,12 +110,17 @@ async def list_funds(db: SessionDep, user: CurrentUser):
 
 @router.post("/funds", response_model=FundOut, status_code=201)
 async def create_fund(body: FundCreate, db: SessionDep, user: CurrentUser):
+    # Fund codes are normalised upper so they line up with the HSBC fund-centre
+    # feed's own code casing (see app/services/orso/prices.py) and with
+    # user-typed variants ("hk-eq" vs "HK-EQ") never colliding at the DB
+    # UniqueConstraint("user_id", "code") level.
+    code = body.code.upper()
     existing = (await db.execute(
-        select(OrsoFund).where(OrsoFund.user_id == user.id, OrsoFund.code == body.code)
+        select(OrsoFund).where(OrsoFund.user_id == user.id, OrsoFund.code == code)
     )).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="fund_code_exists")
-    fund = OrsoFund(user_id=user.id, **body.model_dump())
+    fund = OrsoFund(user_id=user.id, **{**body.model_dump(), "code": code})
     db.add(fund)
     await db.commit()
     await db.refresh(fund)

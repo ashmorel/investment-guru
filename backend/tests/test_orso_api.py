@@ -56,6 +56,17 @@ async def test_create_and_list_funds(orso_client):
     assert [f["code"] for f in listing] == ["HK-EQ"]
 
 
+async def test_create_fund_normalises_code_upper(orso_client):
+    resp = await orso_client.post("/api/orso/funds", json={
+        "code": "hk-eq", "name": "HK Equity", "asset_class": "equity", "risk_rating": 4})
+    assert resp.status_code == 201
+    assert resp.json()["code"] == "HK-EQ"
+    # a differently-cased resubmit collides with the same normalised code
+    dup = await orso_client.post("/api/orso/funds", json={
+        "code": "HK-eq", "name": "dup", "asset_class": "equity", "risk_rating": 4})
+    assert dup.status_code == 409 and dup.json()["detail"] == "fund_code_exists"
+
+
 async def test_get_owned_fund_404_on_foreign(orso_client, db_session):
     other = User(email="other@test.dev", password_hash="x")
     db_session.add(other)
