@@ -9,15 +9,26 @@ from app.core.security import hash_password
 from app.models.user import User
 
 STARTER_FUNDS = [
-    # (code, name, asset_class, risk_rating) — public HSBC/Hang Seng ORSO scheme menu.
-    # Verify/extend this list against the public scheme documentation during the task;
-    # codes are scheme fund identifiers, not personal data.
-    ("HK-EQ", "Hong Kong Equity Fund", "equity", 4),
-    ("INTL-EQ", "International Equity Fund", "equity", 4),
-    ("BAL", "Balanced Fund", "mixed", 3),
-    ("STABLE", "Stable Fund", "mixed", 2),
-    ("BOND", "Global Bond Fund", "bond", 2),
+    # (code, name, asset_class, risk_rating) — real HSBC ORSO (WMFS) scheme fund
+    # menu, HKD-denominated share classes only (their USD twins, codes ending
+    # "U", are skipped — same underlying fund, different currency, not a
+    # distinct menu entry). Sourced from the HSBC fund-centre price feed (see
+    # backend/tests/fixtures/hsbc_fund_prices.json). Public scheme data only —
+    # no personal units/splits are ever seeded.
+    ("NAEF", "North American Equity Fund", "equity", 4),
+    ("IGF", "International Growth Fund", "equity", 4),
+    ("HKEF", "Hong Kong Equity Fund", "equity", 5),
+    ("WBF", "World Bond Fund", "bond", 2),
     ("MMF", "Money Market Fund", "cash", 1),
+    ("NABF", "North American Bond Fund", "bond", 2),
+    ("ISF", "International Stable Fund", "mixed", 2),
+    ("ISGF", "International Stable Growth Fund", "mixed", 3),
+    ("APEF", "Asia Pacific Equity Fund", "equity", 4),
+    ("EEF", "European Equity Fund", "equity", 4),
+    ("CNEF", "Chinese Equity Fund", "equity", 5),
+    ("HSITF", "Hang Seng Index Tracker Fund", "equity", 5),
+    ("CGF", "Capital Guaranteed Fund", "guaranteed", 1),
+    ("CPF", "Central Provident Fund", "guaranteed", 1),
 ]
 
 
