@@ -78,6 +78,7 @@ function mockApi(opts?: { reviews?: unknown[]; onReviewPost?: () => void }) {
       return jsonResponse(REVIEW, 201);
     }
     if (url.includes("/api/guru/reviews")) return jsonResponse({ reviews });
+    if (url.includes("/api/guru/chat/threads")) return jsonResponse({ threads: [] });
     throw new Error(`Unexpected fetch: ${url}`);
   });
 }
@@ -144,6 +145,7 @@ describe("GuruPage", () => {
         return jsonResponse({ detail: "A review is already generating" }, 409);
       }
       if (url.includes("/api/guru/reviews")) return jsonResponse({ reviews: [REVIEW] });
+      if (url.includes("/api/guru/chat/threads")) return jsonResponse({ threads: [] });
       throw new Error(`Unexpected fetch: ${url}`);
     });
     const user = userEvent.setup();
@@ -169,10 +171,11 @@ describe("GuruPage", () => {
     expect(await screen.findByText(/review is not financial advice/i)).toBeInTheDocument();
   });
 
-  it("renders the chat slot placeholder", async () => {
+  it("renders the Guru chat panel", async () => {
     mockApi();
     renderPage();
-    expect(await screen.findByTestId("chat-slot")).toBeInTheDocument();
+    expect(await screen.findByText(/chat with the guru/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new thread/i })).toBeInTheDocument();
   });
 
   it("has no detectable accessibility violations", async () => {

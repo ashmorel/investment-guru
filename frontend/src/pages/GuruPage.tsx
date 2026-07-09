@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import ChatPanel from "../components/ChatPanel";
 import GuruTakePanel from "../components/GuruTakePanel";
 import VerdictChip from "../components/VerdictChip";
 import { ApiError, apiFetch } from "../lib/api";
@@ -230,6 +232,9 @@ function ReviewsCard() {
 }
 
 export default function GuruPage() {
+  const [searchParams] = useSearchParams();
+  const discuss = searchParams.get("discuss");
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold text-text">Guru</h1>
@@ -239,10 +244,7 @@ export default function GuruPage() {
           <DigestCard />
           <ReviewsCard />
         </div>
-        <div
-          data-testid="chat-slot"
-          className="rounded-xl border border-border bg-surface p-5 shadow lg:min-h-[32rem]"
-        />
+        <ChatPanel discuss={discuss} />
       </div>
     </div>
   );
