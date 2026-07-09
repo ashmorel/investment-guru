@@ -95,3 +95,15 @@ export interface AnalyzeResponse {
   as_of: string;
   unavailable_inputs: string[];
 }
+
+export type GuruAction = "hold" | "increase" | "reduce" | "exit";
+export type Conviction = "low" | "med" | "high";
+export interface PositionVerdict { symbol: string; action: GuruAction; conviction: Conviction; rationale: string; }
+export interface ReviewPayload { positions: PositionVerdict[]; observations: string[]; watch_next: string[]; disclaimer: string; }
+export interface DigestPayload { earnings_this_week: { symbol: string; date: string | null; note: string }[]; movers: { symbol: string; note: string }[]; news_flags: { symbol: string | null; headline: string; comment: string }[]; summary: string; disclaimer: string; }
+export interface TakePayload { commentary: string; risks: { kind: string; note: string }[]; ideas: { symbol: string | null; action: GuruAction; conviction: Conviction; rationale: string }[]; disclaimer: string; }
+export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
+export interface InvestorProfile { risk_appetite: "cautious" | "balanced" | "adventurous"; horizon: "short" | "medium" | "long"; sector_interests: string[]; free_text: string; }
+export interface UsageSummary { by_mode: { mode: string; calls: number; input_tokens: number; output_tokens: number; est_cost_usd: string | null }[]; total_cost_30d: string | null; }
+export interface ChatThread { id: number; title: string; portfolio_id: number | null; created_at: string; }
+export interface ChatMessage { id: number; role: "user" | "assistant"; content: string; created_at: string; }

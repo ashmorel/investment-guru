@@ -2,10 +2,12 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { apiFetch } from "./lib/api";
 import DashboardPage from "./pages/DashboardPage";
+import GuruPage from "./pages/GuruPage";
 import ImportWizardPage from "./pages/ImportWizardPage";
 import LoginPage from "./pages/LoginPage";
 import PortfolioDetailPage from "./pages/PortfolioDetailPage";
 import PortfoliosPage from "./pages/PortfoliosPage";
+import SettingsPage from "./pages/SettingsPage";
 
 const queryClient = new QueryClient();
 
@@ -51,10 +53,10 @@ function RequireAuth() {
         <ul className="space-y-1 text-sm">
           <NavItem to="/" label="Dashboard" />
           <NavItem to="/portfolios" label="Portfolios" />
-          <DisabledNavItem label="Guru" note="Phase 2" />
+          <NavItem to="/guru" label="Guru" />
           <DisabledNavItem label="ORSO" note="Phase 4" />
           <NavItem to="/import" label="Import CSV" />
-          <DisabledNavItem label="Settings" />
+          <NavItem to="/settings" label="Settings" />
         </ul>
       </nav>
       <main className="flex-1 p-8">
@@ -74,7 +76,9 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/portfolios" element={<PortfoliosPage />} />
             <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
+            <Route path="/guru" element={<GuruPage />} />
             <Route path="/import" element={<ImportWizardPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
