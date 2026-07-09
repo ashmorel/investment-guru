@@ -1,0 +1,246 @@
+{
+    "data": [
+        {
+            "fundPriceList": [
+                {
+                    "fundIdentifier": "MMF",
+                    "fundNames": [
+                        {
+                            "en-US": "Money Market Fund",
+                            "zh-HK": "\u8ca8\u5e63\u5e02\u5834\u57fa\u91d1",
+                            "zh-CN": "\u8ca8\u5e63\u5e02\u5834\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "130.97000",
+                    "offerAmount": "130.97000"
+                },
+                {
+                    "fundIdentifier": "MMFU",
+                    "fundNames": [
+                        {
+                            "en-US": "Money Market Fund",
+                            "zh-HK": "\u8ca8\u5e63\u5e02\u5834\u57fa\u91d1",
+                            "zh-CN": "\u8ca8\u5e63\u5e02\u5834\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "USD",
+                    "bidAmount": "14.11000",
+                    "offerAmount": "14.11000"
+                },
+                {
+                    "fundIdentifier": "NABF",
+                    "fundNames": [
+                        {
+                            "en-US": "North American Bond Fund",
+                            "zh-HK": "\u5317\u7f8e\u50b5\u5238\u57fa\u91d1",
+                            "zh-CN": "\u5317\u7f8e\u50b5\u5238\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "243.31000",
+                    "offerAmount": "243.31000"
+                },
+                {
+                    "fundIdentifier": "WBF",
+                    "fundNames": [
+                        {
+                            "en-US": "World Bond Fund",
+                            "zh-HK": "\u4e16\u754c\u50b5\u5238\u57fa\u91d1",
+                            "zh-CN": "\u4e16\u754c\u50b5\u5238\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "213.88000",
+                    "offerAmount": "213.88000"
+                },
+                {
+                    "fundIdentifier": "ISF",
+                    "fundNames": [
+                        {
+                            "en-US": "International Stable Fund",
+                            "zh-HK": "\u570b\u969b\u5e73\u7a69\u57fa\u91d1",
+                            "zh-CN": "\u570b\u969b\u5e73\u7a69\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "237.49000",
+                    "offerAmount": "237.49000"
+                },
+                {
+                    "fundIdentifier": "ISGF",
+                    "fundNames": [
+                        {
+                            "en-US": "International Stable Growth Fund",
+                            "zh-HK": "\u570b\u969b\u5e73\u7a69\u589e\u9577\u57fa\u91d1",
+                            "zh-CN": "\u570b\u969b\u5e73\u7a69\u589e\u9577\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "313.63000",
+                    "offerAmount": "313.63000"
+                },
+                {
+                    "fundIdentifier": "IGF",
+                    "fundNames": [
+                        {
+                            "en-US": "International Growth Fund",
+                            "zh-HK": "\u570b\u969b\u589e\u9577\u57fa\u91d1",
+                            "zh-CN": "\u570b\u969b\u589e\u9577\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "502.25000",
+                    "offerAmount": "502.25000"
+                },
+                {
+                    "fundIdentifier": "IGFU",
+                    "fundNames": [
+                        {
+                            "en-US": "International Growth Fund",
+                            "zh-HK": "\u570b\u969b\u589e\u9577\u57fa\u91d1",
+                            "zh-CN": "\u570b\u969b\u589e\u9577\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "USD",
+                    "bidAmount": "52.31000",
+                    "offerAmount": "52.31000"
+                },
+                {
+                    "fundIdentifier": "APEF",
+                    "fundNames": [
+                        {
+                            "en-US": "Asia Pacific Equity Fund",
+                            "zh-HK": "\u4e9e\u592a\u5340\u80a1\u7968\u57fa\u91d1",
+                            "zh-CN": "\u4e9e\u592a\u5340\u80a1\u7968\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "327.07000",
+                    "offerAmount": "327.07000"
+                },
+                {
+                    "fundIdentifier": "EEF",
+                    "fundNames": [
+                        {
+                            "en-US": "European Equity Fund",
+                            "zh-HK": "\u6b50\u6d32\u80a1\u7968\u57fa\u91d1",
+                            "zh-CN": "\u6b50\u6d32\u80a1\u7968\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "273.16000",
+                    "offerAmount": "273.16000"
+                },
+                {
+                    "fundIdentifier": "HKEF",
+                    "fundNames": [
+                        {
+                            "en-US": "Hong Kong Equity Fund",
+                            "zh-HK": "\u9999\u6e2f\u80a1\u7968\u57fa\u91d1",
+                            "zh-CN": "\u9999\u6e2f\u80a1\u7968\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "477.04000",
+                    "offerAmount": "477.04000"
+                },
+                {
+                    "fundIdentifier": "NAEF",
+                    "fundNames": [
+                        {
+                            "en-US": "North American Equity Fund",
+                            "zh-HK": "\u5317\u7f8e\u80a1\u7968\u57fa\u91d1",
+                            "zh-CN": "\u5317\u7f8e\u80a1\u7968\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "1032.20000",
+                    "offerAmount": "1032.20000"
+                },
+                {
+                    "fundIdentifier": "CNEF",
+                    "fundNames": [
+                        {
+                            "en-US": "Chinese Equity Fund",
+                            "zh-HK": "\u4e2d\u570b\u80a1\u7968\u57fa\u91d1",
+                            "zh-CN": "\u4e2d\u570b\u80a1\u7968\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "147.44000",
+                    "offerAmount": "147.44000"
+                },
+                {
+                    "fundIdentifier": "HSITF",
+                    "fundNames": [
+                        {
+                            "en-US": "Hang Seng Index Tracker Fund",
+                            "zh-HK": "\u6052\u6307\u8ffd\u8e64\u6307\u6578\u57fa\u91d1",
+                            "zh-CN": "\u6052\u6307\u8ffd\u8e64\u6307\u6578\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "94.00000",
+                    "offerAmount": "94.00000"
+                },
+                {
+                    "fundIdentifier": "CGF",
+                    "fundNames": [
+                        {
+                            "en-US": "Capital Guaranteed Fund",
+                            "zh-HK": "\u4fdd\u672c\u842c\u5229\u57fa\u91d1",
+                            "zh-CN": "\u4fdd\u672c\u842c\u5229\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "124.84000",
+                    "offerAmount": "124.84000"
+                },
+                {
+                    "fundIdentifier": "CGFU",
+                    "fundNames": [
+                        {
+                            "en-US": "Capital Guaranteed Fund",
+                            "zh-HK": "\u4fdd\u672c\u842c\u5229\u57fa\u91d1",
+                            "zh-CN": "\u4fdd\u672c\u842c\u5229\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "USD",
+                    "bidAmount": "12.28000",
+                    "offerAmount": "12.28000"
+                },
+                {
+                    "fundIdentifier": "CPF",
+                    "fundNames": [
+                        {
+                            "en-US": "Central Provident Fund",
+                            "zh-HK": "\u4e2d\u592e\u516c\u7a4d\u91d1\u57fa\u91d1",
+                            "zh-CN": "\u4e2d\u592e\u516c\u7a4d\u91d1\u57fa\u91d1"
+                        }
+                    ],
+                    "priceDate": "29/06/2026",
+                    "fundCurrencyCode": "HKD",
+                    "bidAmount": "219.15000",
+                    "offerAmount": "219.15000"
+                }
+            ]
+        }
+    ]
+}

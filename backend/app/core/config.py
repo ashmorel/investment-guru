@@ -15,5 +15,9 @@ class Settings(BaseSettings):
     guru_digest_hour: int = 7
     guru_timezone: str = "Europe/London"
 
+    # Discovery (Phase 4 Task 2) confirmed a stable, unauthenticated public JSON
+    # endpoint for HSBC WMFS ORSO fund prices — see app/services/orso/prices.py.
+    orso_price_fetch_enabled: bool = True
+
 
 settings = Settings()
