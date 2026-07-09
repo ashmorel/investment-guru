@@ -382,8 +382,8 @@ function AdviceCard() {
       {latest && (
         <div className="mt-4 space-y-3">
           <ul className="space-y-2">
-            {latest.payload.fund_verdicts.map((v) => (
-              <li key={v.code} className="flex flex-wrap items-center gap-2 text-sm">
+            {latest.payload.fund_verdicts.map((v, i) => (
+              <li key={v.code + "-" + i} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-medium text-text">{v.code}</span>
                 <VerdictChip action={v.action} conviction={v.conviction} />
                 <span className="text-muted">{v.rationale}</span>
@@ -396,22 +396,32 @@ function AdviceCard() {
               <p className="text-xs font-medium uppercase tracking-wide text-muted">Switch plan</p>
               <ul className="mt-2 space-y-1 text-sm text-text">
                 {latest.payload.switch_plan.map((s, i) => (
-                  <li key={i}>
+                  <li key={(s.from_code ?? "—") + "-" + (s.to_code ?? "—") + "-" + i}>
                     {s.from_code ?? "—"} → {s.to_code ?? "—"}: <span className="text-muted">{s.note}</span>
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-sm text-accent">{latest.payload.projection_comment}</p>
-              <button
-                type="button"
-                onClick={() => discuss.mutate(latest.payload)}
-                disabled={discuss.isPending}
-                className="mt-2 text-xs text-accent underline disabled:opacity-50"
-              >
-                Discuss in chat →
-              </button>
             </div>
           )}
+
+          <p className="text-sm text-accent">{latest.payload.projection_comment}</p>
+
+          {latest.payload.watch.length > 0 && (
+            <ul className="space-y-1 text-sm text-muted">
+              {latest.payload.watch.map((w, i) => (
+                <li key={w + "-" + i}>• {w}</li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            onClick={() => discuss.mutate(latest.payload)}
+            disabled={discuss.isPending}
+            className="text-xs text-accent underline disabled:opacity-50"
+          >
+            Discuss in chat →
+          </button>
 
           <p className="text-xs text-muted">
             Generated {new Date(latest.created_at).toLocaleString()}

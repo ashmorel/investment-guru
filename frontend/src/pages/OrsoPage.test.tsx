@@ -312,6 +312,45 @@ describe("OrsoPage", () => {
     expect(posted).toMatchObject({ scope: "orso" });
   });
 
+  it("renders the projection comment and discuss button when switch_plan is empty, without a switch-plan panel", async () => {
+    mockApi({
+      adviceReports: [
+        {
+          ...ADVICE_REPORT,
+          payload: {
+            ...ADVICE_REPORT.payload,
+            switch_plan: [],
+            watch: [],
+          },
+        },
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByText(/stay the course on contributions/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /discuss in chat/i })).toBeInTheDocument();
+    expect(screen.queryByText(/switch plan/i)).not.toBeInTheDocument();
+  });
+
+  it("renders watch items when present", async () => {
+    mockApi({
+      adviceReports: [
+        {
+          ...ADVICE_REPORT,
+          payload: {
+            ...ADVICE_REPORT.payload,
+            switch_plan: [],
+            watch: ["HKEF concentration", "MMF yield drift"],
+          },
+        },
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByText(/hkef concentration/i)).toBeInTheDocument();
+    expect(screen.getByText(/mmf yield drift/i)).toBeInTheDocument();
+  });
+
   it("renders the switch log", async () => {
     mockApi();
     renderPage();

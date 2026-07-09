@@ -39,8 +39,8 @@ class OrsoSwitchLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     changed_at: Mapped[datetime] = mapped_column()
-    old_state: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    new_state: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    old_state: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    new_state: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
