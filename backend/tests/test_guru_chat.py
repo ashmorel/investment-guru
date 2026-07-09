@@ -218,6 +218,81 @@ async def test_chat_thread_scoped_to_portfolio_uses_its_context(guru_client, mak
     assert '"Growth"' in first_user_content  # scoped to the thread's portfolio only
 
 
+async def test_orso_thread_scope_echoed_in_create_and_detail(orso_client):
+    created = await orso_client.post(
+        "/api/guru/chat/threads", json={"title": "ORSO", "scope": "orso"}
+    )
+    assert created.status_code == 201
+    thread = created.json()
+    assert thread["scope"] == "orso"
+
+    detail = await orso_client.get(f"/api/guru/chat/threads/{thread['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["scope"] == "orso"
+
+
+async def test_orso_thread_chat_uses_orso_context_not_portfolio(orso_client):
+    fund = (await orso_client.post("/api/orso/funds", json={
+        "code": "HK-EQ", "name": "HK Equity", "asset_class": "equity", "risk_rating": 4,
+    })).json()
+
+    t = (await orso_client.post(
+        "/api/guru/chat/threads", json={"title": "ORSO chat", "scope": "orso"}
+    )).json()
+    assert t["scope"] == "orso"
+
+    orso_client.fake_llm.stream_chunks = ["noted"]
+    async with orso_client.stream(
+        "POST", f"/api/guru/chat/threads/{t['id']}/messages",
+        json={"content": "should I switch funds?"},
+    ) as resp:
+        assert resp.status_code == 200
+        [_ async for _ in resp.aiter_text()]
+
+    call = orso_client.fake_llm.calls[-1]
+    first_user_content = call["messages"][0]["content"]
+    # the ORSO fund menu reached the provider...
+    assert fund["code"] in first_user_content
+    # ...and the portfolio-context payload (keyed "portfolios") did not
+    assert '"portfolios"' not in first_user_content
+
+
+async def test_orso_thread_ignores_portfolio_id(orso_client, make_instrument):
+    await make_instrument("AAPL")
+    pf_id = (await orso_client.post(
+        "/api/portfolios", json={"name": "Growth", "kind": "real", "base_currency": "USD"}
+    )).json()["id"]
+    await orso_client.post(
+        f"/api/portfolios/{pf_id}/positions",
+        json={"symbol": "AAPL", "quantity": "10", "avg_cost": "100"},
+    )
+    await orso_client.post("/api/orso/funds", json={
+        "code": "HK-EQ", "name": "HK Equity", "asset_class": "equity", "risk_rating": 4,
+    })
+
+    t = (await orso_client.post(
+        "/api/guru/chat/threads",
+        json={"title": "ORSO chat", "scope": "orso", "portfolio_id": pf_id},
+    )).json()
+    assert t["portfolio_id"] == pf_id
+    assert t["scope"] == "orso"
+
+    orso_client.fake_llm.stream_chunks = ["noted"]
+    async with orso_client.stream(
+        "POST", f"/api/guru/chat/threads/{t['id']}/messages",
+        json={"content": "how's the ORSO doing?"},
+    ) as resp:
+        assert resp.status_code == 200
+        [_ async for _ in resp.aiter_text()]
+
+    call = orso_client.fake_llm.calls[-1]
+    first_user_content = call["messages"][0]["content"]
+    # the portfolio ("Growth") never reached the context -- portfolio_id is
+    # ignored on orso-scoped threads
+    assert '"Growth"' not in first_user_content
+    assert '"portfolios"' not in first_user_content
+
+
 async def test_chat_thread_with_foreign_portfolio_404(guru_client, db_session):
     # Seed a portfolio owned by a different user directly via the DB, so guru_client's
     # session (logged in as "lee") is left untouched — unlike the client fixture, which

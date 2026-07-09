@@ -12,6 +12,9 @@ from app.services.guru.context import build_context
 from app.services.guru.llm.base import LLMError, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
 from app.services.guru.service import GuruService, _now
+from app.services.orso.context import build_orso_context
+from app.services.orso.prices import OrsoPriceService
+from app.services.valuation import FxService
 
 _HISTORY_LIMIT = 20
 
@@ -23,24 +26,29 @@ class ChatService:
         self.guru = guru
 
     async def stream_turn(
-        self, db: AsyncSession, user: User, thread: ChatThread, content: str
+        self, db: AsyncSession, user: User, thread: ChatThread, content: str,
+        price_service: OrsoPriceService | None = None,
+        fx_service: FxService | None = None,
     ) -> AsyncIterator[dict]:
         # Resolved eagerly (not lazily inside the generator below) so LLMNotConfigured
         # is raised the moment this coroutine is awaited/created — before any streaming
         # or persistence happens. See app/api/guru.py::post_chat_message.
         provider = self.guru._require_provider()
-        return self._stream(provider, db, user, thread, content)
+        return self._stream(provider, db, user, thread, content, price_service, fx_service)
 
     async def _stream(
         self, provider: LLMProvider, db: AsyncSession, user: User,
         thread: ChatThread, content: str,
+        price_service: OrsoPriceService | None = None,
+        fx_service: FxService | None = None,
     ) -> AsyncIterator[dict]:
         user_msg = ChatMessage(thread_id=thread.id, role="user", content=content,
                                created_at=_now())
         db.add(user_msg)
         await db.commit()
 
-        system, messages = await self._build_messages(db, user, thread)
+        system, messages = await self._build_messages(
+            db, user, thread, price_service, fx_service)
         stream = provider.stream_text(system=system, messages=messages,
                                       model=settings.guru_advice_model, max_tokens=2048)
         parts: list[str] = []
@@ -66,20 +74,32 @@ class ChatService:
                                          "output_tokens": usage.output_tokens}}
 
     async def _build_messages(
-        self, db: AsyncSession, user: User, thread: ChatThread
+        self, db: AsyncSession, user: User, thread: ChatThread,
+        price_service: OrsoPriceService | None = None,
+        fx_service: FxService | None = None,
     ) -> tuple[str, list[dict]]:
         system = PERSONA_V1
         if thread.seed_context is not None:
             system += ("\n\nThe user opened this chat to discuss: "
                        + json.dumps(thread.seed_context))
 
-        if thread.portfolio_id is not None:
-            portfolios = [await get_owned_portfolio(db, user, thread.portfolio_id)]
+        if thread.scope == "orso":
+            # portfolio_id is ignored for orso-scoped threads: the context is the
+            # ORSO fund menu/allocation/projection, not a portfolio valuation.
+            # price_service/fx_service must be caller-supplied (see
+            # app/api/guru.py::post_chat_message) -- never let this fall back to
+            # None here, as build_orso_context's own None-fallback constructs a
+            # live Yahoo-backed FxService.
+            ctx = await build_orso_context(db, user, price_service, fx_service)
         else:
-            portfolios = await self.guru._all_portfolios(db, user)
-        profile = await self.guru._profile(db, user)
-        ctx = await build_context(db, user, quote_service=self.guru.quotes, fx=self.guru.fx,
-                                  portfolios=portfolios, profile=profile)
+            if thread.portfolio_id is not None:
+                portfolios = [await get_owned_portfolio(db, user, thread.portfolio_id)]
+            else:
+                portfolios = await self.guru._all_portfolios(db, user)
+            profile = await self.guru._profile(db, user)
+            ctx = await build_context(db, user, quote_service=self.guru.quotes,
+                                      fx=self.guru.fx, portfolios=portfolios,
+                                      profile=profile)
 
         rows = (await db.execute(
             select(ChatMessage).where(ChatMessage.thread_id == thread.id)

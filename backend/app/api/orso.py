@@ -14,13 +14,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.api.deps import CurrentUser, SessionDep
 from app.api.guru import GuruDep, ReportOut, _report_out, get_profile_row, map_guru_errors
 from app.api.valuation import get_services
-from app.core.config import settings
 from app.models import GuruReport, InvestorProfile, OrsoAllocation, OrsoFund, OrsoSwitchLog
 from app.services.market_data.quotes import get_quote_service
-from app.services.orso.prices import (
-    HsbcFundCentreProvider,
-    OrsoPriceService,
-)
+from app.services.orso.deps import OrsoPriceDep, get_orso_prices  # noqa: F401  (re-exported)
+from app.services.orso.prices import OrsoPriceService
 from app.services.orso.projection import project
 from app.services.valuation import FxService
 
@@ -35,30 +32,6 @@ _BASE_CURRENCY = "GBP"
 
 _UNITS_Q = Decimal("0.0001")
 _PCT_Q = Decimal("0.01")
-
-
-# --- price-service dependency (module singleton; tests override) ------------
-
-_orso_price_service: OrsoPriceService | None = None
-
-
-def get_orso_prices() -> OrsoPriceService:
-    global _orso_price_service
-    if _orso_price_service is None:
-        provider = None
-        if (
-            settings.orso_price_fetch_enabled
-            and settings.orso_hsbc_client_id
-            and settings.orso_hsbc_client_secret
-        ):
-            provider = HsbcFundCentreProvider(
-                settings.orso_hsbc_client_id, settings.orso_hsbc_client_secret
-            )
-        _orso_price_service = OrsoPriceService(provider)
-    return _orso_price_service
-
-
-OrsoPriceDep = Annotated[OrsoPriceService, Depends(get_orso_prices)]
 
 
 # --- ownership helper (reused by Task 5) -----------------------------------

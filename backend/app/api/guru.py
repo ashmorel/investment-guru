@@ -12,10 +12,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.portfolios import get_owned_portfolio
+from app.api.valuation import get_services
 from app.models import ChatMessage, ChatThread, GuruReport, InvestorProfile, LlmUsage
 from app.services.guru.chat import ChatService
 from app.services.guru.llm.base import LLMError, LLMNotConfigured
 from app.services.guru.service import GenerationInProgress, GuruService, get_guru_service
+from app.services.orso.deps import OrsoPriceDep
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +185,7 @@ class ThreadOut(BaseModel):
     id: int
     title: str
     portfolio_id: int | None
+    scope: str | None
     created_at: str
 
 
@@ -194,6 +197,7 @@ class ThreadCreate(BaseModel):
     title: str
     portfolio_id: int | None = None
     seed_context: dict | None = None
+    scope: Literal["orso"] | None = None
 
 
 class ChatMessageOut(BaseModel):
@@ -213,7 +217,7 @@ class ChatMessageIn(BaseModel):
 
 def _thread_out(t: ChatThread) -> ThreadOut:
     return ThreadOut(id=t.id, title=t.title, portfolio_id=t.portfolio_id,
-                     created_at=t.created_at.isoformat())
+                     scope=t.scope, created_at=t.created_at.isoformat())
 
 
 def _message_out(m: ChatMessage) -> ChatMessageOut:
@@ -242,7 +246,7 @@ async def create_thread(body: ThreadCreate, db: SessionDep, user: CurrentUser):
     if body.portfolio_id is not None:
         await get_owned_portfolio(db, user, body.portfolio_id)
     thread = ChatThread(user_id=user.id, title=body.title, portfolio_id=body.portfolio_id,
-                        seed_context=body.seed_context)
+                        seed_context=body.seed_context, scope=body.scope)
     db.add(thread)
     await db.commit()
     await db.refresh(thread)
@@ -266,14 +270,22 @@ def _sse(event: str, data: dict) -> str:
 
 @router.post("/chat/threads/{thread_id}/messages")
 async def post_chat_message(thread_id: int, body: ChatMessageIn, db: SessionDep,
-                            user: CurrentUser, guru: GuruDep):
+                            user: CurrentUser, guru: GuruDep, prices: OrsoPriceDep,
+                            services: Annotated[tuple, Depends(get_services)]):
     thread = await _get_owned_thread(db, user, thread_id)
     chat = ChatService(guru)
+    # prices/fx are only used for orso-scoped threads (ChatService._build_messages
+    # branches on thread.scope), but are always obtained here via the overridden
+    # dependencies -- get_orso_prices()/get_services() are cheap (no network) and
+    # this is the only way tests' dependency_overrides reach ChatService without
+    # it falling back to a live-Yahoo-backed FxService.
+    _quotes, fx = services
     with map_guru_errors():
         # Awaiting here (rather than merely calling stream_turn) forces the eager
         # provider check to run now, so LLMNotConfigured is mapped to 503 before the
         # StreamingResponse — and its 200 status line — is ever returned.
-        gen = await chat.stream_turn(db, user, thread, body.content)
+        gen = await chat.stream_turn(db, user, thread, body.content,
+                                     price_service=prices, fx_service=fx)
 
     async def event_source():
         async for frame in gen:
