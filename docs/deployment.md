@@ -83,6 +83,34 @@ railway run python -m app.seed
 - Production mode: refuses to create/keep `you@example.com` or `change-me` defaults
 - Creates the initial admin account using `INITIAL_USER_EMAIL` and `INITIAL_USER_PASSWORD`
 
+### Provisioning gotchas (learned 2026-07-09)
+
+- **Railpack doesn't auto-use the Dockerfile.** Railway's default Railpack builder
+  will *not* pick up `backend/Dockerfile` on its own — setting the GraphQL
+  `dockerfilePath` field alone did not take effect. Explicitly set the service
+  variable `RAILWAY_DOCKERFILE_PATH=Dockerfile` so the service actually builds
+  from the Dockerfile instead of Railpack's auto-detected build.
+- **Pin `PORT=8000`.** If left unset, Railway injects its own `PORT` value at
+  runtime, which can mismatch the port the domain is configured to target —
+  the domain then 502s even though the container is healthy. Set the service
+  variable `PORT=8000` so uvicorn's bind (`--port ${PORT:-8000}`) matches the
+  domain's target port.
+- **`railway ssh` needs a registered SSH key.** If `railway ssh` fails because
+  no SSH key is registered for the account, seed the database from your local
+  machine against the Postgres service's `DATABASE_PUBLIC_URL` instead of
+  trying to shell into the Railway container. Pull secrets via shell
+  substitution so they never get printed or logged:
+  ```bash
+  cd backend
+  DATABASE_URL=$(railway variables --service Postgres --json | jq -r '.DATABASE_PUBLIC_URL') \
+    INITIAL_USER_EMAIL=$(railway variables --json | jq -r '.INITIAL_USER_EMAIL') \
+    INITIAL_USER_PASSWORD=$(railway variables --json | jq -r '.INITIAL_USER_PASSWORD') \
+    ENV=production python -m app.seed
+  ```
+- **`railway service restart` needs `--yes` non-interactively.** Without it,
+  the CLI waits on an interactive confirmation prompt that never arrives in a
+  scripted/agent context: `railway service restart --yes`.
+
 ---
 
 ## Rollback

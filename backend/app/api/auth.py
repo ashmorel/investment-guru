@@ -23,21 +23,27 @@ class MeOut(BaseModel):
 
 @router.post("/login", status_code=204)
 async def login(body: LoginIn, response: Response, db: SessionDep) -> None:
-    login_throttle.check(body.email)
+    # Verify credentials before consulting the throttle: a correct password
+    # must always be able to log in, even if the account is currently
+    # lockout-eligible from an attacker's failed guesses (owner-lockout
+    # mitigation). Only the failure path is throttle-gated, which preserves
+    # the enumeration-safe 401/429 shapes for wrong passwords.
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
-    if user is None or not verify_password(body.password, user.password_hash):
-        login_throttle.record_failure(body.email)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    login_throttle.record_success(body.email)
-    response.set_cookie(
-        "session",
-        sign_session(user.id),
-        max_age=SESSION_MAX_AGE_SECONDS,
-        httponly=True,
-        samesite="lax",
-        secure=settings.is_production,
-    )
+    if user is not None and verify_password(body.password, user.password_hash):
+        login_throttle.record_success(body.email)
+        response.set_cookie(
+            "session",
+            sign_session(user.id),
+            max_age=SESSION_MAX_AGE_SECONDS,
+            httponly=True,
+            samesite="lax",
+            secure=settings.is_production,
+        )
+        return
+    login_throttle.check(body.email)
+    login_throttle.record_failure(body.email)
+    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 @router.post("/logout", status_code=204)

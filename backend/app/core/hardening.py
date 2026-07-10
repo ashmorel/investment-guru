@@ -9,6 +9,7 @@ from app.core.config import Settings
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 _MAX_FAILURES = 5
 _LOCKOUT_SECONDS = 60.0
+_MAX_TRACKED = 10_000
 
 _DEFAULT_SECRET = "dev-secret-not-for-production"
 _MIN_SECRET_LEN = 32
@@ -26,8 +27,10 @@ def validate_production_settings(settings: Settings) -> None:
 class LoginThrottle:
     """Per-email consecutive-failure lockout. Single-process state (single replica).
 
-    Unbounded growth of per-email dicts under bogus-email spray is accepted for
-    this single-user, single-process deployment (no eviction by design).
+    Tracked state is capped at `_MAX_TRACKED` combined entries to bound memory
+    under a bogus-email spray: when a new email would push tracked state over
+    the cap, expired lockouts are swept first, and if that isn't enough the
+    oldest failure entry is evicted to make room.
     """
 
     def __init__(self, clock: Callable[[], float] = time.monotonic):
@@ -35,12 +38,38 @@ class LoginThrottle:
         self._failures: dict[str, int] = {}
         self._locked_until: dict[str, float] = {}
 
+    def _evict_expired_lockouts(self) -> None:
+        now = self._clock()
+        expired = [email for email, until in self._locked_until.items() if until <= now]
+        for email in expired:
+            del self._locked_until[email]
+            self._failures.pop(email, None)
+
+    def _evict_oldest_failure(self) -> None:
+        if not self._failures:
+            return
+        oldest = next(iter(self._failures))
+        del self._failures[oldest]
+        self._locked_until.pop(oldest, None)
+
     def check(self, email: str) -> None:
         until = self._locked_until.get(email, 0.0)
         if self._clock() < until:
             raise HTTPException(status_code=429, detail="too_many_attempts")
+        if email in self._locked_until:
+            # Lockout has expired (checked above) — sweep it instead of
+            # leaving stale state around.
+            del self._locked_until[email]
+            self._failures.pop(email, None)
 
     def record_failure(self, email: str) -> None:
+        if (
+            email not in self._failures
+            and len(self._failures) + len(self._locked_until) >= _MAX_TRACKED
+        ):
+            self._evict_expired_lockouts()
+            if len(self._failures) + len(self._locked_until) >= _MAX_TRACKED:
+                self._evict_oldest_failure()
         n = self._failures.get(email, 0) + 1
         self._failures[email] = n
         if n >= _MAX_FAILURES:

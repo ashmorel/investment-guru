@@ -28,6 +28,28 @@ def test_validate_production_settings_rejects_default_and_short_keys():
     validate_production_settings(dev)
 
 
+def test_login_throttle_state_stays_bounded_under_spray():
+    from app.core.hardening import _MAX_TRACKED
+
+    now = [1000.0]
+    t = LoginThrottle(clock=lambda: now[0])
+    for i in range(_MAX_TRACKED + 500):
+        t.record_failure(f"user{i}@spray.test")
+        assert len(t._failures) + len(t._locked_until) <= _MAX_TRACKED
+
+
+def test_login_throttle_check_sweeps_expired_lockout():
+    now = [1000.0]
+    t = LoginThrottle(clock=lambda: now[0])
+    for _ in range(5):
+        t.record_failure("locked@b.c")
+    assert "locked@b.c" in t._locked_until
+    now[0] += 61  # lockout expires
+    t.check("locked@b.c")  # no raise; sweeps the expired entry
+    assert "locked@b.c" not in t._locked_until
+    assert "locked@b.c" not in t._failures
+
+
 def test_login_throttle_locks_after_five_failures_and_resets():
     now = [1000.0]
     t = LoginThrottle(clock=lambda: now[0])
@@ -58,6 +80,23 @@ async def test_login_endpoint_throttles(auth_client, monkeypatch):
     r = await auth_client.post("/api/auth/login",
                                json={"email": "lee@test.dev", "password": "wrong"})
     assert r.status_code == 429 and r.json()["detail"] == "too_many_attempts"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_login_correct_password_wins_after_lockout(auth_client, monkeypatch):
+    # Owner-lockout mitigation: after 5 wrong-password attempts lock the
+    # account out for guessers, the real owner's correct password must still
+    # succeed instead of being 429'd.
+    from app.core import hardening
+    monkeypatch.setattr(hardening, "login_throttle", hardening.LoginThrottle())
+    monkeypatch.setattr("app.api.auth.login_throttle", hardening.login_throttle)
+    for _ in range(5):
+        r = await auth_client.post("/api/auth/login",
+                                   json={"email": "lee@test.dev", "password": "wrong"})
+        assert r.status_code == 401
+    r = await auth_client.post("/api/auth/login",
+                               json={"email": "lee@test.dev", "password": "pw123456"})
+    assert r.status_code == 204
 
 
 @pytest.mark.asyncio(loop_scope="session")

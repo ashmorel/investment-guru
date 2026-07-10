@@ -22,7 +22,7 @@ pip install -e ".[dev]"
 cp .env.example .env   # then edit values; add ANTHROPIC_API_KEY=... to enable the Guru
 # note: (re)start the backend after adding the key — it is read at startup
 alembic upgrade head && python -m app.seed
-uvicorn app.main:app --reload --factory  # (app.main:create_app)
+uvicorn app.main:app --reload
 # frontend (from repo root):
 cd frontend && npm install && npm run dev
 ```
