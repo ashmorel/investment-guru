@@ -136,6 +136,33 @@ fund was unpriced); ORSO chat streamed with scheme context; usage rows
 `mode="orso"`. Backend 210 tests + ruff clean; frontend 62 tests + `npm run
 check` clean.
 
+## Phase 5 — Cloud deployment: COMPLETE
+
+Live in production: **https://investment-guru-rose.vercel.app**. Railway runs
+the backend (Docker image, `alembic upgrade head` on every deploy, single
+replica so the in-process APScheduler is the always-on daily-digest scheduler)
+plus Postgres; Vercel serves the frontend and rewrites `/api/*` to the Railway
+domain — single origin, first-party cookies, zero frontend env vars. Deploys
+gate on green GitHub Actions on both platforms (Railway check-suite setting;
+Vercel Git integration, root directory `frontend/`).
+
+### Hardening (production flag `ENV=production`)
+Secure + SameSite=Lax + HttpOnly session cookies · startup fails hard on the
+default/short SECRET_KEY · seed refuses default credentials · login throttling
+(5 failures → 60s lockout → 429) · 2 MB CSV upload cap (413) · security
+headers (nosniff / frame-deny / same-origin referrer, always on). All
+unit-tested and re-verified live from the public internet.
+
+### Verified end-to-end in production (2026-07-09)
+Cookie flags + headers + 429 throttle + 413 cap confirmed from outside; digest
+(Haiku) + take (Opus) 201 through the proxy; **SSE chat streamed token-by-token
+through the Vercel rewrite** (5 deltas over ~2s — no buffering, contingency
+unused); ORSO manual price + allocation + real switching advice; service
+restart triggered the catch-up which generated the first user's daily
+digest+take (always-on confirmed). Smoke ran under a throwaway user, fully
+purged afterwards — prod DB holds only the real account + seeded fund menu.
+Ops detail (env vars, rollback, backups, key rotation): `docs/deployment.md`.
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433

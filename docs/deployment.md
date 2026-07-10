@@ -155,6 +155,11 @@ If a session key is compromised:
 
 **Expected result:** ✓ `verified` — Vercel rewrites pass through SSE streaming without buffering
 
+**Verified 2026-07-09 (production smoke):** a real chat turn through
+`https://investment-guru-rose.vercel.app` delivered 5 delta frames spread over
+~2.0s (token-by-token, unbuffered) followed by the `done` frame. The fallback
+below was NOT needed.
+
 If streaming buffers (all tokens arrive at once):
 - **Fallback (contingency, not deployed):** Point only the SSE endpoint at the Railway domain via an absolute URL; first-party cookies still sent (SameSite=Lax + same-origin request); one-route CORS exception required
 - **Decision:** Documented here for reference; current design assumes rewrite works
