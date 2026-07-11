@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Numeric, String, UniqueConstraint
@@ -40,11 +40,11 @@ class OrsoAllocation(Base):
     # previous DB-enforced precision (18,4)/(5,2).
     @validates("units")
     def _quantize_units(self, key: str, value: Decimal) -> Decimal:
-        return Decimal(value).quantize(_UNITS_Q)
+        return Decimal(value).quantize(_UNITS_Q, rounding=ROUND_HALF_UP)
 
     @validates("contribution_pct")
     def _quantize_contribution_pct(self, key: str, value: Decimal) -> Decimal:
-        return Decimal(value).quantize(_PCT_Q)
+        return Decimal(value).quantize(_PCT_Q, rounding=ROUND_HALF_UP)
 
 
 class OrsoSwitchLog(Base):

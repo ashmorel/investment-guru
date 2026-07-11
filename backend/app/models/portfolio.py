@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -44,8 +44,8 @@ class Position(TimestampMixin, Base):
     # previous DB-enforced precision (18,6)/(18,4).
     @validates("quantity")
     def _quantize_quantity(self, key: str, value: Decimal | None) -> Decimal | None:
-        return None if value is None else Decimal(value).quantize(_QTY_Q)
+        return None if value is None else Decimal(value).quantize(_QTY_Q, rounding=ROUND_HALF_UP)
 
     @validates("avg_cost")
     def _quantize_avg_cost(self, key: str, value: Decimal | None) -> Decimal | None:
-        return None if value is None else Decimal(value).quantize(_COST_Q)
+        return None if value is None else Decimal(value).quantize(_COST_Q, rounding=ROUND_HALF_UP)
