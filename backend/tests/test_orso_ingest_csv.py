@@ -52,3 +52,28 @@ async def test_csv_missing_required_header_422(orso_client):
     text = "units,value\n10,100\n"
     r = await _csv(orso_client, text)
     assert r.status_code == 422
+
+
+async def test_csv_matches_existing_fund_by_fuzzy_name(orso_client):
+    fid = (await orso_client.post("/api/orso/funds", json={
+        "code": "GEQ", "name": "Global Equity Fund", "asset_class": "equity",
+        "risk_rating": 5, "currency": "HKD"})).json()["id"]
+    # CSV code doesn't match ("GLB"), but the name does after normalization
+    # (lowercased, collapsed whitespace).
+    text = ("fund_code,fund_name,units,value,contribution_pct\n"
+            "GLB,global  equity fund,100,1000,100\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    row = r.json()["rows"][0]
+    assert row["matched_fund_id"] == fid
+    assert row["proposed_fund"] is None
+    assert "unmatched" not in row["flags"]
+
+
+async def test_csv_unparseable_value_flagged(orso_client):
+    text = ("fund_code,units,value,contribution_pct\n"
+            "AAA,10,1000notanumber,100\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    row = r.json()["rows"][0]
+    assert "unparseable_value" in row["flags"]

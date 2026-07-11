@@ -3,6 +3,7 @@ user reviews before committing via POST /allocation/apply. Read-only — buildin
 a draft never writes."""
 import csv
 import io
+import re
 from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel
@@ -12,8 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import OrsoFund
 
 _REQUIRED_HEADERS = {"fund_code", "units", "contribution_pct"}
-_UNITS_Q = Decimal("0.0001")
 _PRICE_Q = Decimal("0.0001")
+
+# Strip everything that isn't a letter, digit, or space, then collapse runs of
+# whitespace to a single space. Used for a SAFE fuzzy name match: normalized
+# forms must be *equal* (never substring/contains, which would false-match
+# "US Bond" to "US Bond Plus").
+_PUNCT_RE = re.compile(r"[^0-9a-z ]+")
+_WS_RE = re.compile(r"\s+")
+
+
+def _norm_name(name: str) -> str:
+    return _WS_RE.sub(" ", _PUNCT_RE.sub(" ", name.lower())).strip()
 
 
 class ProposedFund(BaseModel):
@@ -74,7 +85,7 @@ async def build_draft(
         select(OrsoFund).where(OrsoFund.user_id == user_id)
     )).scalars().all()
     by_code = {f.code.upper(): f for f in funds}
-    by_name = {f.name.strip().lower(): f for f in funds}
+    by_name = {_norm_name(f.name): f for f in funds}
 
     rows: list[DraftRow] = []
     pct_sum = Decimal("0")
@@ -87,9 +98,11 @@ async def build_draft(
         currency = (r.get("currency") or "").upper()
         flags: list[str] = []
 
-        match = by_code.get(code) or (by_name.get(name.strip().lower()) if name else None)
+        match = by_code.get(code) or (by_name.get(_norm_name(name)) if name else None)
         if r.get("units") and units is None:
             flags.append("unparseable_units")
+        if r.get("value") and value is None:
+            flags.append("unparseable_value")
         if r.get("contribution_pct") and pct is None:
             flags.append("unparseable_pct")
         if match is None:
