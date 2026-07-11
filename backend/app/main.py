@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.guru import router as guru_router
 from app.api.imports import router as imports_router
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(admin_router)
     app.include_router(auth_router)
     app.include_router(guru_router)
     app.include_router(imports_router)

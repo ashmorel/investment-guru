@@ -23,3 +23,20 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def is_admin(user: User) -> bool:
+    """Check if user is in the admin email allowlist (case-insensitive)."""
+    from app.core.config import settings
+
+    return user.email.lower() in [email.lower() for email in settings.admin_emails]
+
+
+async def get_admin_user(user: CurrentUser) -> User:
+    """Dependency that checks admin authorization."""
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="admin_only")
+    return user
+
+
+AdminUser = Annotated[User, Depends(get_admin_user)]
