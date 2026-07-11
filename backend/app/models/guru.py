@@ -2,10 +2,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, ForeignKey, Numeric, String, false
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedJSON, EncryptedText
 from app.core.db import Base
 from app.models.base import TimestampMixin
 
@@ -18,11 +19,12 @@ class InvestorProfile(TimestampMixin, Base):
     risk_appetite: Mapped[str] = mapped_column(String(16), default="balanced")
     horizon: Mapped[str] = mapped_column(String(16), default="medium")
     sector_interests: Mapped[list[str]] = mapped_column(JSONB, default=list)
-    free_text: Mapped[str] = mapped_column(Text, default="")
+    free_text: Mapped[str] = mapped_column(EncryptedText(), default="")
     birth_year: Mapped[int | None] = mapped_column(nullable=True)
     retirement_target_age: Mapped[int | None] = mapped_column(nullable=True)
     retirement_target_pot: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     orso_monthly_contribution: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    digest_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class GuruReport(Base):
@@ -32,7 +34,7 @@ class GuruReport(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     kind: Mapped[str] = mapped_column(String(8))  # review | digest | take
     portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id"))
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    payload: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON())
     model: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column()
 
@@ -54,7 +56,7 @@ class ChatMessage(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     thread_id: Mapped[int] = mapped_column(ForeignKey("chat_threads.id"), index=True)
     role: Mapped[str] = mapped_column(String(9))  # user | assistant
-    content: Mapped[str] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(EncryptedText())
     created_at: Mapped[datetime] = mapped_column()
 
 

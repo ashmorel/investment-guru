@@ -3,11 +3,14 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Numeric, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
+from app.core.crypto import EncryptedDecimal, EncryptedJSON
 from app.core.db import Base
 from app.models.base import TimestampMixin
+
+_UNITS_Q = Decimal("0.0001")  # was Numeric(18, 4)
+_PCT_Q = Decimal("0.01")  # was Numeric(5, 2)
 
 
 class OrsoFund(TimestampMixin, Base):
@@ -29,8 +32,19 @@ class OrsoAllocation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     fund_id: Mapped[int] = mapped_column(ForeignKey("orso_funds.id"), unique=True)
-    units: Mapped[Decimal] = mapped_column(Numeric(18, 4))
-    contribution_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    units: Mapped[Decimal] = mapped_column(EncryptedDecimal())
+    contribution_pct: Mapped[Decimal] = mapped_column(EncryptedDecimal())
+
+    # EncryptedDecimal (unlike the Numeric columns it replaces) stores whatever
+    # scale the caller passed in, so quantize explicitly to preserve the
+    # previous DB-enforced precision (18,4)/(5,2).
+    @validates("units")
+    def _quantize_units(self, key: str, value: Decimal) -> Decimal:
+        return Decimal(value).quantize(_UNITS_Q)
+
+    @validates("contribution_pct")
+    def _quantize_contribution_pct(self, key: str, value: Decimal) -> Decimal:
+        return Decimal(value).quantize(_PCT_Q)
 
 
 class OrsoSwitchLog(Base):
@@ -39,8 +53,8 @@ class OrsoSwitchLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     changed_at: Mapped[datetime] = mapped_column()
-    old_state: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
-    new_state: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    old_state: Mapped[list[dict[str, Any]]] = mapped_column(EncryptedJSON())
+    new_state: Mapped[list[dict[str, Any]]] = mapped_column(EncryptedJSON())
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
