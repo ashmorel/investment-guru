@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -14,9 +14,16 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.api.deps import CurrentUser, SessionDep
 from app.api.guru import GuruDep, ReportOut, _report_out, get_profile_row, map_guru_errors
 from app.api.valuation import get_services
+from app.core.hardening import MAX_UPLOAD_BYTES
 from app.models import GuruReport, InvestorProfile, OrsoAllocation, OrsoFund, OrsoSwitchLog
 from app.services.market_data.quotes import get_quote_service
 from app.services.orso.deps import OrsoPriceDep, get_orso_prices  # noqa: F401  (re-exported)
+from app.services.orso.ingest import (
+    AllocationDraft,
+    CsvHeaderError,
+    build_draft,
+    parse_csv,
+)
 from app.services.orso.prices import OrsoPriceService
 from app.services.orso.projection import project
 from app.services.valuation import FxService
@@ -41,6 +48,22 @@ async def get_owned_fund(db: SessionDep, user: CurrentUser, fund_id: int) -> Ors
     if fund is None or fund.user_id != user.id:
         raise HTTPException(status_code=404, detail="Fund not found")
     return fund
+
+
+# --- ingest (read-only draft; Tasks 4/5 consume AllocationDraft) -----------
+
+@router.post("/ingest/csv", response_model=AllocationDraft)
+async def ingest_csv(db: SessionDep, user: CurrentUser, file: UploadFile):
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="upload_too_large")
+    try:
+        parsed = parse_csv(data.decode("utf-8-sig"))
+    except CsvHeaderError as exc:
+        raise HTTPException(status_code=422, detail=f"missing_headers:{exc.args[0]}") from None
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=422, detail="not_utf8_csv") from None
+    return await build_draft(db, user.id, parsed, source="csv")
 
 
 # --- funds CRUD ------------------------------------------------------------
