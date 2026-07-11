@@ -53,10 +53,21 @@ def test_json_typedecorator_roundtrip():
 
 
 def test_production_requires_encryption_key():
+    from cryptography.fernet import Fernet
+
+    # Use a generated key (not the dev key) for production tests
+    prod_key = Fernet.generate_key().decode()
+
     ok = Settings(
-        env="production", secret_key="x" * 32, data_encryption_key=crypto._active_key()
+        env="production", secret_key="x" * 32, data_encryption_key=prod_key
     )
     validate_production_settings(ok)  # no raise
     with pytest.raises(RuntimeError):
         bad = Settings(env="production", secret_key="x" * 32, data_encryption_key="")
         validate_production_settings(bad)
+
+
+def test_is_dev_key():
+    assert crypto.is_dev_key(crypto._DEV_KEY_REAL) is True
+    assert crypto.is_dev_key("different-key") is False
+    assert crypto.is_dev_key("") is False

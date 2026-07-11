@@ -16,25 +16,31 @@ def test_is_production_flag():
 
 
 def test_validate_production_settings_rejects_default_and_short_keys():
-    from app.core.crypto import _active_key
+    from cryptography.fernet import Fernet
+
+    # Use a generated key (not the dev key) for production tests
+    prod_key = Fernet.generate_key().decode()
 
     bad_default = Settings(
         env="production", secret_key="dev-secret-not-for-production",
-        data_encryption_key=_active_key(),
+        data_encryption_key=prod_key,
     )
     with pytest.raises(RuntimeError):
         validate_production_settings(bad_default)
-    short = Settings(env="production", secret_key="x" * 31, data_encryption_key=_active_key())
+    short = Settings(env="production", secret_key="x" * 31, data_encryption_key=prod_key)
     with pytest.raises(RuntimeError):
         validate_production_settings(short)
-    ok = Settings(env="production", secret_key="x" * 32, data_encryption_key=_active_key())
+    ok = Settings(env="production", secret_key="x" * 32, data_encryption_key=prod_key)
     validate_production_settings(ok)  # no raise
     dev = Settings()  # default key fine outside production
     validate_production_settings(dev)
 
 
 def test_validate_production_settings_rejects_missing_and_invalid_encryption_key():
-    from app.core.crypto import _active_key
+    from cryptography.fernet import Fernet
+
+    # Use a generated key (not the dev key) for production tests
+    prod_key = Fernet.generate_key().decode()
 
     missing = Settings(env="production", secret_key="x" * 32, data_encryption_key="")
     with pytest.raises(RuntimeError):
@@ -44,8 +50,18 @@ def test_validate_production_settings_rejects_missing_and_invalid_encryption_key
     )
     with pytest.raises(RuntimeError):
         validate_production_settings(invalid)
-    ok = Settings(env="production", secret_key="x" * 32, data_encryption_key=_active_key())
+    ok = Settings(env="production", secret_key="x" * 32, data_encryption_key=prod_key)
     validate_production_settings(ok)  # no raise
+
+
+def test_validate_production_settings_rejects_committed_dev_key():
+    from app.core.crypto import _DEV_KEY_REAL
+
+    bad = Settings(
+        env="production", secret_key="x" * 32, data_encryption_key=_DEV_KEY_REAL
+    )
+    with pytest.raises(RuntimeError, match="must not be the committed dev key"):
+        validate_production_settings(bad)
 
 
 def test_login_throttle_state_stays_bounded_under_spray():

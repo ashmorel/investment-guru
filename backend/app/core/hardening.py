@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core import crypto
 from app.core.config import Settings
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
@@ -29,6 +30,8 @@ def validate_production_settings(settings: Settings) -> None:
         Fernet(settings.data_encryption_key.encode())
     except (ValueError, TypeError) as exc:
         raise RuntimeError("DATA_ENCRYPTION_KEY must be a valid Fernet key") from exc
+    if crypto.is_dev_key(settings.data_encryption_key):
+        raise RuntimeError("DATA_ENCRYPTION_KEY must not be the committed dev key in production")
 
 
 class LoginThrottle:

@@ -1,5 +1,6 @@
 import json
 from decimal import Decimal
+from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from sqlalchemy import Text
@@ -25,6 +26,11 @@ def _active_key() -> str:
     return settings.data_encryption_key or _DEV_KEY_REAL
 
 
+def is_dev_key(value: str) -> bool:
+    """Check if the given key is the committed dev key."""
+    return value == _DEV_KEY_REAL
+
+
 class Crypto:
     def __init__(self, keys: list[str]):
         self._mf = MultiFernet([Fernet(k.encode()) for k in keys])
@@ -41,8 +47,14 @@ class Crypto:
             raise DecryptError(str(exc)) from exc
 
 
+@lru_cache(maxsize=1)
+def _get_cached_crypto(key: str) -> Crypto:
+    """Cache Crypto instance based on the active key to avoid rebuilding Fernet."""
+    return Crypto([key])
+
+
 def _default() -> "Crypto":
-    return Crypto([_active_key()])
+    return _get_cached_crypto(_active_key())
 
 
 def encrypt(plaintext: str) -> str:
