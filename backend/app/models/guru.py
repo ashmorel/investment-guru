@@ -25,6 +25,10 @@ class InvestorProfile(TimestampMixin, Base):
     retirement_target_pot: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     orso_monthly_contribution: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     digest_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    orso_display_currency: Mapped[str] = mapped_column(
+        String(3), default="GBP", server_default="GBP")
+    orso_contribution_currency: Mapped[str] = mapped_column(
+        String(3), default="HKD", server_default="HKD")
 
 
 class GuruReport(Base):

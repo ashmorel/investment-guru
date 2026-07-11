@@ -24,6 +24,11 @@ class OrsoFund(TimestampMixin, Base):
     asset_class: Mapped[str] = mapped_column(String(32))
     risk_rating: Mapped[int] = mapped_column()
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    currency: Mapped[str] = mapped_column(String(3), default="HKD", server_default="HKD")
+
+    @validates("currency")
+    def _upper_currency(self, key: str, value: str) -> str:
+        return value.upper()
 
 
 class OrsoAllocation(Base):

@@ -52,6 +52,7 @@ class FundOut(BaseModel):
     asset_class: str
     risk_rating: int
     archived: bool
+    currency: str
 
 
 class FundCreate(BaseModel):
@@ -59,6 +60,7 @@ class FundCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     asset_class: str = Field(min_length=1, max_length=32)
     risk_rating: int = Field(ge=1, le=7)
+    currency: str = Field(default="HKD", min_length=3, max_length=3)
 
 
 class FundUpdate(BaseModel):
@@ -66,11 +68,12 @@ class FundUpdate(BaseModel):
     asset_class: str | None = Field(default=None, min_length=1, max_length=32)
     risk_rating: int | None = Field(default=None, ge=1, le=7)
     archived: bool | None = None
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
 
 
 def _fund_out(f: OrsoFund) -> FundOut:
     return FundOut(id=f.id, code=f.code, name=f.name, asset_class=f.asset_class,
-                   risk_rating=f.risk_rating, archived=f.archived)
+                   risk_rating=f.risk_rating, archived=f.archived, currency=f.currency)
 
 
 @router.get("/funds", response_model=list[FundOut])
