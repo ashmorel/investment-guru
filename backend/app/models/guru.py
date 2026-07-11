@@ -64,6 +64,22 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column()
 
 
+class LlmConfig(Base):
+    __tablename__ = "llm_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16), default="anthropic")
+    advice_model: Mapped[str] = mapped_column(String(64))
+    scan_model: Mapped[str] = mapped_column(String(64))
+    api_key: Mapped[str] = mapped_column(EncryptedText(), default="")
+    advice_input_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    advice_output_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    scan_input_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    scan_output_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column()
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class LlmUsage(Base):
     __tablename__ = "llm_usage"
 
