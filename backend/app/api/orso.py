@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, SessionDep
@@ -126,6 +126,18 @@ async def list_funds(db: SessionDep, user: CurrentUser):
     rows = (await db.execute(
         select(OrsoFund).where(OrsoFund.user_id == user.id).order_by(OrsoFund.id)
     )).scalars().all()
+    return [_fund_out(f) for f in rows]
+
+
+@router.get("/funds/search", response_model=list[FundOut])
+async def search_funds(db: SessionDep, user: CurrentUser, q: str = ""):
+    stmt = select(OrsoFund).where(OrsoFund.user_id == user.id)
+    term = q.strip().lower()
+    if term:
+        like = f"%{term}%"
+        stmt = stmt.where(
+            func.lower(OrsoFund.code).like(like) | func.lower(OrsoFund.name).like(like))
+    rows = (await db.execute(stmt.order_by(OrsoFund.code))).scalars().all()
     return [_fund_out(f) for f in rows]
 
 
