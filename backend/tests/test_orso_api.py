@@ -315,7 +315,19 @@ async def test_overview_values_and_flags(orso_client, db_session):
     assert ov["total_base"] is None
 
 
-async def test_overview_projection_when_goals_complete(orso_client, db_session):
+async def test_overview_projection_when_goals_complete(orso_client, db_session, monkeypatch):
+    # Default fund currency is HKD and display currency GBP, so the overview needs
+    # an HKD->GBP rate to value funds and convert the contribution for projection.
+    # The test provider has no FX; stub a fixed rate so projection (the intent
+    # under test) populates. Without FX, projection correctly degrades to None.
+    from app.services import valuation
+
+    async def fake_rate(self, db, base, quote):
+        if base == quote:
+            return Decimal("1")
+        return {("HKD", "GBP"): Decimal("0.1")}[(base, quote)]
+    monkeypatch.setattr(valuation.FxService, "get_rate", fake_rate)
+
     user = await _current_user(db_session)
     fund = await _seed_fund(db_session, user.id, "A")
     db_session.add(OrsoAllocation(user_id=user.id, fund_id=fund.id,

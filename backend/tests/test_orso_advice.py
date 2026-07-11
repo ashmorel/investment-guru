@@ -219,7 +219,20 @@ async def test_advice_latest_and_list(orso_client, db_session):
 
 # --- context content -----------------------------------------------------------
 
-async def test_advice_context_includes_fund_menu_projection_and_switch(orso_client, db_session):
+async def test_advice_context_includes_fund_menu_projection_and_switch(
+        orso_client, db_session, monkeypatch):
+    # Default fund currency is HKD and display currency GBP; the overview embedded
+    # in the advice context needs an HKD->GBP rate to value funds and convert the
+    # contribution for projection. The test provider has no FX, so stub a fixed
+    # rate to keep the projection rates present in the prompt (the intent here).
+    from app.services import valuation
+
+    async def fake_rate(self, db, base, quote):
+        if base == quote:
+            return Decimal("1")
+        return {("HKD", "GBP"): Decimal("0.1")}[(base, quote)]
+    monkeypatch.setattr(valuation.FxService, "get_rate", fake_rate)
+
     await _seed_basic(orso_client, db_session)
     orso_client.fake_llm.structured_queue.append(_orso_advice(["A", "B"]))
 

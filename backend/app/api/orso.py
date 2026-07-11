@@ -360,6 +360,22 @@ async def manual_price(body: ManualPriceIn, db: SessionDep, user: CurrentUser,
 
 # --- overview --------------------------------------------------------------
 
+async def _convert(fx, db, amount: Decimal | None, src: str, dst: str,
+                   failed: list[str], code: str) -> Decimal | None:
+    """Convert amount src->dst; None on FX failure (records `code` in `failed`)."""
+    if amount is None:
+        return None
+    if src == dst:
+        return amount.quantize(Decimal("0.01"))
+    try:
+        rate = await fx.get_rate(db, src, dst)
+    except Exception:
+        if code not in failed:
+            failed.append(code)
+        return None
+    return (amount * rate).quantize(Decimal("0.01"))
+
+
 async def build_overview(db, user, price_service: OrsoPriceService,
                          fx_service: FxService | None = None) -> dict:
     """GET /overview payload builder (also imported by Task 5's context
@@ -376,11 +392,19 @@ async def build_overview(db, user, price_service: OrsoPriceService,
     alloc_by_fund = {a.fund_id: a for a in allocs}
     latest = await price_service.latest_prices(db, [f.id for f in funds])
 
+    profile = await get_profile_row(db, user)
+    display_ccy = (profile.orso_display_currency if profile
+                   and profile.orso_display_currency else _BASE_CURRENCY)
+    contrib_ccy = (profile.orso_contribution_currency if profile
+                   and profile.orso_contribution_currency else "HKD")
+
     today = datetime.now(UTC).date()
     fund_rows: list[dict] = []
     stale: list[str] = []
     unpriced: list[str] = []
+    fx_unavailable: list[str] = []
     total_hkd = Decimal("0")
+    total_display = Decimal("0")
     contribution_sum = Decimal("0")
 
     for f in funds:
@@ -397,14 +421,23 @@ async def build_overview(db, user, price_service: OrsoPriceService,
             price = None
             price_as_of = None
             price_source = None
+            value_native = None
             value_hkd = None
+            value_display = None
             unpriced.append(f.code)
         else:
             price = price_row.price
             price_as_of = price_row.as_of.isoformat()
             price_source = price_row.source
-            value_hkd = (units * price).quantize(Decimal("0.01"))
-            total_hkd += value_hkd
+            value_native = (units * price).quantize(Decimal("0.01"))
+            value_hkd = await _convert(fx_service, db, value_native, f.currency, "HKD",
+                                       fx_unavailable, f.code)
+            value_display = await _convert(fx_service, db, value_native, f.currency,
+                                           display_ccy, fx_unavailable, f.code)
+            if value_hkd is not None:
+                total_hkd += value_hkd
+            if value_display is not None:
+                total_display += value_display
             if (today - price_row.as_of).days > _STALE_AFTER_DAYS:
                 stale.append(f.code)
 
@@ -420,28 +453,25 @@ async def build_overview(db, user, price_service: OrsoPriceService,
             "archived": f.archived,
             "units": str(units),
             "contribution_pct": str(contribution_pct),
+            "currency": f.currency,
+            "value_native": (None if value_native is None else str(value_native)),
+            "value_hkd": (None if value_hkd is None else str(value_hkd)),
+            "value_display": (None if value_display is None else str(value_display)),
             "price": (None if price is None else str(price)),
             "price_as_of": price_as_of,
             "price_source": price_source,
-            "value_hkd": (None if value_hkd is None else str(value_hkd)),
         })
 
     active_count = sum(1 for f in funds if not f.archived)
     split_sum_off = active_count > 0 and contribution_sum != Decimal("100")
 
-    # base-currency line: HKD -> GBP; on any FX failure, null (never error).
+    # legacy total_base (HKD -> GBP) kept for the not-yet-migrated frontend
     total_base = None
-    try:
-        rate = await fx_service.get_rate(db, "HKD", _BASE_CURRENCY)
-        total_base = {
-            "currency": _BASE_CURRENCY,
-            "value": str((total_hkd * rate).quantize(Decimal("0.01"))),
-        }
-    except Exception:
-        total_base = None
+    gbp = await _convert(fx_service, db, total_hkd, "HKD", _BASE_CURRENCY, [], "__total__")
+    if gbp is not None:
+        total_base = {"currency": _BASE_CURRENCY, "value": str(gbp)}
 
     # goals + projection
-    profile = await get_profile_row(db, user)
     goal_values = None if profile is None else {
         "birth_year": profile.birth_year,
         "retirement_target_age": profile.retirement_target_age,
@@ -452,38 +482,46 @@ async def build_overview(db, user, price_service: OrsoPriceService,
         goal_values[k] is None for k in _GOAL_FIELDS
     )
 
+    # projection runs in the display currency
     projection = None
     if not goals_incomplete:
         current_year = datetime.now(UTC).year
         years = goal_values["retirement_target_age"] - (
             current_year - goal_values["birth_year"]
         )
-        scenarios = project(
-            total_hkd,
-            goal_values["orso_monthly_contribution"],
-            years,
-            goal_values["retirement_target_pot"],
-        )
-        projection = [
-            {
-                "rate": str(s.rate),
-                "projected_pot": str(s.projected_pot),
-                "on_track": s.on_track,
-                "gap": (None if s.gap is None else str(s.gap)),
-            }
-            for s in scenarios
-        ]
+        monthly_display = await _convert(
+            fx_service, db, goal_values["orso_monthly_contribution"],
+            contrib_ccy, display_ccy, [], "__contrib__")
+        if monthly_display is not None:
+            scenarios = project(
+                total_display,
+                monthly_display,
+                years,
+                goal_values["retirement_target_pot"],
+            )
+            projection = [
+                {
+                    "rate": str(s.rate),
+                    "projected_pot": str(s.projected_pot),
+                    "on_track": s.on_track,
+                    "gap": (None if s.gap is None else str(s.gap)),
+                }
+                for s in scenarios
+            ]
 
     return {
         "funds": fund_rows,
         "total_hkd": str(total_hkd),
         "total_base": total_base,
+        "total_display": str(total_display),
+        "display_currency": display_ccy,
         "projection": projection,
         "flags": {
             "stale": stale,
             "unpriced": unpriced,
             "split_sum_off": split_sum_off,
             "goals_incomplete": goals_incomplete,
+            "fx_unavailable": fx_unavailable,
         },
         "as_of": datetime.now(UTC).isoformat(),
     }
@@ -494,6 +532,26 @@ async def overview(db: SessionDep, user: CurrentUser, prices: OrsoPriceDep,
                    services: Annotated[tuple, Depends(get_services)]):
     _quotes, fx = services
     return await build_overview(db, user, prices, fx)
+
+
+class DisplayCurrencyIn(BaseModel):
+    currency: str = Field(min_length=3, max_length=3)
+
+
+class DisplayCurrencyOut(BaseModel):
+    currency: str
+
+
+@router.put("/display-currency", response_model=DisplayCurrencyOut)
+async def set_display_currency(body: DisplayCurrencyIn, db: SessionDep, user: CurrentUser):
+    ccy = body.currency.upper()
+    stmt = pg_insert(InvestorProfile).values(
+        user_id=user.id, orso_display_currency=ccy)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["user_id"], set_={"orso_display_currency": ccy})
+    await db.execute(stmt)
+    await db.commit()
+    return DisplayCurrencyOut(currency=ccy)
 
 
 # --- switching advice (Guru ORSO mode) --------------------------------------
