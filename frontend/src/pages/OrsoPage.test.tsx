@@ -299,6 +299,22 @@ describe("OrsoPage", () => {
     expect(await screen.findByText(/already generating/i)).toBeInTheDocument();
   });
 
+  it("shows the daily-limit message when generating advice returns 429 budget_exhausted", async () => {
+    mockApi({
+      adviceReports: [],
+      onAdvicePost: () => jsonResponse({ detail: "budget_exhausted" }, 429),
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText(/no advice yet/i);
+    await user.click(screen.getByRole("button", { name: /get switching advice/i }));
+
+    expect(
+      await screen.findByText(/daily ai limit reached — resets tomorrow/i),
+    ).toBeInTheDocument();
+  });
+
   it("creates a scope=orso chat thread and navigates to /guru on discuss", async () => {
     let posted: unknown = null;
     mockApi({ onThreadPost: (body) => (posted = body) });
