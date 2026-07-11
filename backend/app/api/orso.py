@@ -17,6 +17,7 @@ from app.api.valuation import get_services
 from app.core.hardening import MAX_UPLOAD_BYTES
 from app.models import GuruReport, InvestorProfile, OrsoAllocation, OrsoFund, OrsoSwitchLog
 from app.services.market_data.quotes import get_quote_service
+from app.services.orso.allocation import apply_allocation
 from app.services.orso.deps import OrsoPriceDep, get_orso_prices  # noqa: F401  (re-exported)
 from app.services.orso.ingest import (
     AllocationDraft,
@@ -283,6 +284,52 @@ async def replace_allocation(body: AllocationReplace, db: SessionDep, user: Curr
                          units=str(a.units), contribution_pct=str(a.contribution_pct))
            for a in sorted(body.allocations, key=lambda x: funds[x.fund_id].code)]
     return AllocationResult(allocations=out, switched=switched)
+
+
+# --- allocation apply (reviewed ingest draft; Task 4) -----------------------
+
+class ApplyPriceIn(BaseModel):
+    market_value: Decimal = Field(gt=0)
+    as_of: date
+
+
+class ApplyItem(BaseModel):
+    fund_id: int | None = None
+    new_fund_code: str | None = None
+    units: Decimal = Field(ge=0)
+    contribution_pct: Decimal = Field(ge=0, le=100)
+    price: ApplyPriceIn | None = None
+
+
+class ApplyNewFund(BaseModel):
+    code: str = Field(min_length=1, max_length=16)
+    name: str = Field(min_length=1, max_length=120)
+    currency: str = Field(min_length=3, max_length=3)
+    asset_class: str = Field(default="unknown", max_length=32)
+    risk_rating: int = Field(default=4, ge=1, le=7)
+
+
+class ApplyRequest(BaseModel):
+    new_funds: list[ApplyNewFund] = []
+    allocations: list[ApplyItem]
+    note: str | None = Field(default=None, max_length=300)
+
+
+class ApplyResult(BaseModel):
+    created_funds: list[str]
+    switched: bool
+
+
+@router.post("/allocation/apply", response_model=ApplyResult)
+async def apply_reviewed(body: ApplyRequest, db: SessionDep, user: CurrentUser,
+                         prices: OrsoPriceDep):
+    result = await apply_allocation(
+        db, user,
+        new_funds=[f.model_dump() for f in body.new_funds],
+        allocations=[a.model_dump() for a in body.allocations],
+        note=body.note, price_service=prices)
+    await db.commit()
+    return ApplyResult(**result)
 
 
 # --- goals -----------------------------------------------------------------
