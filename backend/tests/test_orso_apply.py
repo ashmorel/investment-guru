@@ -68,3 +68,18 @@ async def test_apply_rejects_other_users_fund(orso_client, client, db_session):
         "new_funds": [], "allocations": [{"fund_id": fid, "units": "1",
                                           "contribution_pct": "100"}], "note": None})
     assert r.status_code == 422
+
+
+async def test_apply_rejects_units_to_archived_fund(orso_client, db_session):
+    # Create and archive a fund, then try to allocate units to it
+    fid = (await orso_client.post("/api/orso/funds", json={
+        "code": "ARCHIV", "name": "Archived Fund", "asset_class": "equity",
+        "risk_rating": 4})).json()["id"]
+    # Archive the fund (allowed when units == 0)
+    await orso_client.patch(f"/api/orso/funds/{fid}", json={"archived": True})
+    # Try to allocate units to the archived fund
+    r = await orso_client.post("/api/orso/allocation/apply", json={
+        "new_funds": [], "allocations": [{"fund_id": fid, "units": "100",
+                                          "contribution_pct": "100"}], "note": None})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "fund_archived"

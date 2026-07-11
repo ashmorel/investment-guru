@@ -97,6 +97,8 @@ async def apply_allocation(
         pct = Decimal(str(a["contribution_pct"]))
         if units < 0 or pct < 0 or pct > 100:
             raise HTTPException(status_code=422, detail="out_of_range")
+        if fund.archived and units > 0:
+            raise HTTPException(status_code=422, detail="fund_archived")
         items.append((fund.id, fund.code, units, pct))
 
         # 3. derive + write manual price when market_value provided
