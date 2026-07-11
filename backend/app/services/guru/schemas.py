@@ -80,3 +80,16 @@ class OrsoAdvicePayload(BaseModel):
     projection_comment: str
     watch: list[str]
     disclaimer: str
+
+
+class ExtractedFundRow(BaseModel):
+    fund_code: str
+    fund_name: str | None = None
+    units: str | None = None            # decimal-as-string; None if not shown
+    value: str | None = None
+    currency: str | None = None
+    contribution_pct: str | None = None
+
+
+class OrsoStatementExtraction(BaseModel):
+    rows: list[ExtractedFundRow]

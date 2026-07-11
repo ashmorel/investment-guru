@@ -2,6 +2,7 @@
 prices (refresh / manual entry), and the overview payload (values + projection
 + integrity flags)."""
 
+import base64
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated
@@ -27,6 +28,7 @@ from app.services.orso.ingest import (
 )
 from app.services.orso.prices import OrsoPriceService
 from app.services.orso.projection import project
+from app.services.orso.vision import extract_statement
 from app.services.valuation import FxService
 
 router = APIRouter(prefix="/api/orso", tags=["orso"])
@@ -65,6 +67,25 @@ async def ingest_csv(db: SessionDep, user: CurrentUser, file: UploadFile):
     except UnicodeDecodeError:
         raise HTTPException(status_code=422, detail="not_utf8_csv") from None
     return await build_draft(db, user.id, parsed, source="csv")
+
+
+_ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+@router.post("/ingest/screenshot", response_model=AllocationDraft)
+async def ingest_screenshot(db: SessionDep, user: CurrentUser, guru: GuruDep,
+                            file: UploadFile):
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="unsupported_image_type")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="upload_too_large")
+    provider = guru.provider
+    if provider is None:
+        raise HTTPException(status_code=503, detail="llm_unconfigured")
+    b64 = base64.b64encode(data).decode()
+    with map_guru_errors():
+        return await extract_statement(provider, db, user.id, b64, file.content_type)
 
 
 # --- funds CRUD ------------------------------------------------------------
