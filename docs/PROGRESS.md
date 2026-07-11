@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-08 (Phase 2a — signals engine complete)._
+_Last updated: 2026-07-12 (ORSO data-entry + advice complete, migration 0009)._
 
 ## Phase 1 — portfolio core: COMPLETE
 
@@ -218,6 +218,52 @@ columns). (3) **Key rotation path** — `DATA_ENCRYPTION_KEY` accepts a comma-se
 list (encrypt with the first, decrypt with any); prod validation rejects an invalid/dev key in
 any list position; runbook added to `docs/deployment.md`. Also (Minor) `run_daily_job` now uses a
 fresh DB session per user (matches `catch_up`). Backend **274** tests green (6 new).
+
+## Enhancement — ORSO data-entry + advice: COMPLETE (2026-07-12, migration 0009)
+
+Turned ORSO holdings entry into a fast, safe, review-before-commit flow and made the currency
+model + Guru advice goal-aware. Spec `docs/superpowers/specs/2026-07-11-orso-data-entry-advice-design.md`,
+plan `docs/superpowers/plans/2026-07-11-orso-data-entry-advice.md`. Live in prod (migration
+0008→0009 ran clean; new endpoints mounted, 401 unauth).
+
+### Data model (0009, additive)
+`orso_funds.currency` (native, default HKD, plaintext); `investor_profiles.orso_display_currency`
+(default GBP) + `orso_contribution_currency` (default HKD). Encrypted columns unchanged.
+
+### Currency
+`build_overview` now values each fund in its native currency (`units×price`) and converts to the
+user's display currency via `FxService` (same-currency short-circuits; per-fund FX failure → null +
+`flags.fx_unavailable`, never 500). Legacy `total_hkd`/`value_hkd`/`total_base` kept populated
+(additive, so the frontend never broke between backend pushes). Projection runs in the display
+currency. `PUT /orso/display-currency` persists the choice.
+
+### Ingest (one draft, three doors, one transactional commit)
+CSV (`POST /orso/ingest/csv`), statement screenshot via the Guru vision path
+(`POST /orso/ingest/screenshot` — budget-gated 429, LLM failure → 502 not 500, image not persisted),
+and manual all produce a **read-only** `AllocationDraft` (`app/services/orso/ingest.py`: code-then-
+normalized-name matching, implied price = value÷units, flagged rows for unmatched/unparseable). The
+user reviews/edits, then `POST /orso/allocation/apply` (`app/services/orso/allocation.py`) commits it
+in ONE transaction: create confirmed new funds + write derived `manual` prices + full-replace the
+allocation with a switch-log entry. All-or-nothing (422 → nothing committed); archived-fund guard +
+cross-user 422 parity with `PUT /allocation`.
+
+### Fund search + goal-gap advice
+`GET /orso/funds/search` over the user's own menu (code + normalized name, incl. archived). The Guru
+ORSO advice context gained `goal_gap` (projection shortfall/surplus per scenario, display currency),
+`monthly_contribution`/headroom, and per-fund risk; `OrsoAdvicePayload` gained
+`contribution_suggestion` (a concrete lever). Regenerate-on-demand unchanged.
+
+### Frontend
+Ingest wizard at `/orso/import` (Upload → Review&edit draft → Saved), fund-search typeahead,
+display-currency switcher. `npm run check` green (tsc 0, lint 0, vitest 94 incl. vitest-axe, build).
+
+### Verified
+Backend **~300** tests green; each of the 7 backend tasks reviewed with fix loops (notable:
+CSV fuzzy-name→normalized-equality, apply archived-fund guard). A pre-existing UTC-vs-local staleness
+test flake was fixed in passing. Live: migration 0009 clean, `/api/health` 200, all 5 new endpoints
+mounted (401 unauth). **Domain fact:** user is on the HSBC Local Staff DC Scheme (not WMFS), so
+statement-derived prices are primary. Remaining user step: run the first real ingest to seed the fund
+catalogue in prod.
 
 ## How to run locally
 ```bash

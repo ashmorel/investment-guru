@@ -3,16 +3,17 @@
 > Resume-anywhere handoff doc for any agent/session (Claude Code, Codex, Cursor, …).
 > **Keep this file current: refresh it at the end of any change pushed to production.**
 
-## Status (2026-07-09)
+## Status (2026-07-12)
 
-**ALL FIVE MASTER-SPEC PHASES + ENHANCEMENT PROJECT 1 (multi-user + encryption + admin) COMPLETE AND LIVE IN PRODUCTION.**
+**ALL FIVE MASTER-SPEC PHASES + ENHANCEMENT PROJECTS 1 (multi-user + encryption + admin) AND "ORSO data-entry + advice" COMPLETE AND LIVE IN PRODUCTION.**
 
 - **Live app:** https://investment-guru-rose.vercel.app (Vercel frontend → `/api/*` rewrites → Railway backend)
 - Phase 1 portfolio core · 2a signals engine · 2b the Guru (LLM) · 4 ORSO pension · 5 cloud — all shipped, smoke-verified in prod, final whole-branch reviews merge-clean.
+- **ORSO data-entry + advice (2026-07-12, migration 0009):** per-fund native `currency` + user-set `orso_display_currency`/`orso_contribution_currency`; multi-currency `build_overview` (each fund → display currency via FxService, per-fund FX-failure → `flags.fx_unavailable`, never 500; legacy `total_hkd`/`value_hkd`/`total_base` kept additive) + projection-in-display-currency + `PUT /orso/display-currency`. Ingest: CSV (`POST /orso/ingest/csv`), statement screenshot via the Guru vision path (`POST /orso/ingest/screenshot`, budget-gated 429/degrade-502, image not persisted), and manual — all produce a read-only `AllocationDraft` (`app/services/orso/ingest.py`) the user reviews, committed by ONE transactional switch-logged `POST /orso/allocation/apply` (`app/services/orso/allocation.py`: create funds + derived `manual` prices `value÷units` + full-replace, all-or-nothing). `GET /orso/funds/search` (own menu, code+normalized-name). Guru ORSO advice enriched with goal-gap (projection shortfall + contribution headroom) → `OrsoAdvicePayload.contribution_suggestion`. Frontend ingest wizard at `/orso/import`. **Domain fact:** the user is on the HSBC **Local Staff DC Scheme**, NOT WMFS — the live WMFS price feed won't cover their funds, so statement-derived/manual prices are primary (feed stays best-effort).
 - **Enhancement Project 1 (2026-07-09):** open registration + per-user isolation, encryption at rest (Fernet, `DATA_ENCRYPTION_KEY`), email-allowlist admin role + `/admin` shell, per-user daily LLM budget (429 `budget_exhausted`), opt-in daily digest. Live-smoke verified (encryption proven: prod ciphertext undecryptable with the committed dev key).
 - **Enhancement programme (5 projects):** 1 multi-user+encryption ✅ · 2 multi-provider LLM (OpenAI + admin config panel) · 3 dashboard/news UX · 4 user sector grouping · 5 sector-rotation advice. Specs land in `docs/superpowers/specs/` as each is designed; project-1 spec = `2026-07-09-multiuser-encryption-design.md`.
 - Full history: `docs/PROGRESS.md`. Specs/plans: `docs/superpowers/{specs,plans}/`. Ops: `docs/deployment.md`.
-- Outstanding user step: import real Yahoo CSV + enter real ORSO allocation in the live UI.
+- Outstanding user step: import real Yahoo CSV; and run the first ORSO ingest against a real (redacted-for-repo) HSBC Local Staff DC statement to seed the fund menu/catalogue in prod (the spec's "seed from a sample statement" step). A redacted sample is also wanted to add a real-fixture extraction test for `tests/test_orso_vision.py` (currently a synthetic 1×1 PNG).
 - Accepted maintenance minors (do NOT re-litigate; fix only if asked): login throttle is signalling-grade (bcrypt+strong password is the real control); an active lockout can be evicted under extreme email spray; Railway origin is directly reachable (all routes auth-gated); `/api/imports/commit` has no body-size cap. Encryption scope hides amounts/analysis/chat/notes but NOT which tickers a user holds (structural instrument FK stays plaintext — a deliberate, approved choice).
 - **Enhancement Project 1 post-review fix-forward (2026-07-11):** `positions.notes` now encrypted at rest (migration **0008**, `EncryptedText`); the crypto layer refuses the committed dev key as an at-rest fallback in production (closes the migration-runs-before-boot trap); `DATA_ENCRYPTION_KEY` supports a `new,old` comma-separated list for staged key rotation (encrypt with first, decrypt with any — runbook in `docs/deployment.md`); scheduler `run_daily_job` uses a fresh DB session per user (matches `catch_up`).
 
@@ -29,7 +30,7 @@ output (`client.messages.parse`); chat is the only free-text path.
 
 ## Stack & layout
 
-- `backend/` — FastAPI + SQLAlchemy 2 async + Alembic (head **0008**) + Postgres; APScheduler in-process
+- `backend/` — FastAPI + SQLAlchemy 2 async + Alembic (head **0009**) + Postgres; APScheduler in-process
   (single replica = the scheduler). `app/services/{market_data,signals,guru,orso}/` behind provider
   abstractions; `app/api/*` routers. LLM: `app/services/guru/llm/` (AnthropicProvider; FakeLLMProvider for tests).
   Models config: advice `claude-opus-4-8`, scan `claude-haiku-4-5` (swap via env).
