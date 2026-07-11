@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, is_admin
 from app.core.config import settings
 from app.core.hardening import login_throttle, register_throttle
 from app.core.security import (
@@ -102,5 +102,5 @@ async def logout(response: Response) -> None:
 
 @router.get("/me", response_model=MeOut)
 async def me(user: CurrentUser) -> MeOut:
-    is_admin = user.email.lower() in {e.lower() for e in settings.admin_emails}
-    return MeOut(id=user.id, email=user.email, is_admin=is_admin)
+    admin_status = is_admin(user)
+    return MeOut(id=user.id, email=user.email, is_admin=admin_status)

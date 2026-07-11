@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Cookie, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.db import get_session
 from app.core.security import read_session
 from app.models.user import User
@@ -27,8 +28,6 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 def is_admin(user: User) -> bool:
     """Check if user is in the admin email allowlist (case-insensitive)."""
-    from app.core.config import settings
-
     return user.email.lower() in [email.lower() for email in settings.admin_emails]
 
 
