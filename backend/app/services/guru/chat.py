@@ -8,6 +8,7 @@ from app.api.portfolios import get_owned_portfolio
 from app.core.config import settings
 from app.models import ChatMessage, ChatThread, User
 from app.services.guru import usage as usage_mod
+from app.services.guru.budget import check_budget
 from app.services.guru.context import build_context
 from app.services.guru.llm.base import LLMError, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
@@ -31,9 +32,10 @@ class ChatService:
         fx_service: FxService | None = None,
     ) -> AsyncIterator[dict]:
         # Resolved eagerly (not lazily inside the generator below) so LLMNotConfigured
-        # is raised the moment this coroutine is awaited/created — before any streaming
-        # or persistence happens. See app/api/guru.py::post_chat_message.
+        # and BudgetExhausted are raised the moment this coroutine is awaited/created —
+        # before any streaming or persistence happens. See app/api/guru.py::post_chat_message.
         provider = self.guru._require_provider()
+        await check_budget(db, user.id)
         return self._stream(provider, db, user, thread, content, price_service, fx_service)
 
     async def _stream(

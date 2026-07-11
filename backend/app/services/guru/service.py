@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models import GuruReport, Portfolio, User
 from app.services.guru import usage as usage_mod
+from app.services.guru.budget import check_budget
 from app.services.guru.context import build_context
 from app.services.guru.llm.anthropic import AnthropicProvider
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
@@ -66,6 +67,7 @@ class GuruService:
         if lock.locked():
             raise GenerationInProgress("review")
         async with lock:
+            await check_budget(db, user.id)
             profile = await self._profile(db, user)
             ctx = await build_context(db, user, quote_service=self.quotes, fx=self.fx,
                                       portfolios=[portfolio], profile=profile)
@@ -114,6 +116,7 @@ class GuruService:
         if lock.locked():
             raise GenerationInProgress("orso")
         async with lock:
+            await check_budget(db, user.id)
             ctx = await build_orso_context(db, user, price_service, fx_service)
             fund_menu = set(ctx["fund_menu"])
             messages = [{"role": "user", "content":
@@ -163,6 +166,7 @@ class GuruService:
         if lock.locked():
             raise GenerationInProgress(kind)
         async with lock:
+            await check_budget(db, user.id)
             profile = await self._profile(db, user)
             portfolios = await self._all_portfolios(db, user)
             ctx = await build_context(db, user, quote_service=self.quotes, fx=self.fx,

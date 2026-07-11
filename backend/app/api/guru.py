@@ -14,6 +14,7 @@ from app.api.deps import CurrentUser, SessionDep
 from app.api.portfolios import get_owned_portfolio
 from app.api.valuation import get_services
 from app.models import ChatMessage, ChatThread, GuruReport, InvestorProfile, LlmUsage
+from app.services.guru.budget import BudgetExhausted
 from app.services.guru.chat import ChatService
 from app.services.guru.llm.base import LLMError, LLMNotConfigured
 from app.services.guru.service import GenerationInProgress, GuruService, get_guru_service
@@ -41,6 +42,8 @@ def map_guru_errors():
         raise HTTPException(status_code=409, detail="generation_in_progress") from None
     except LLMError:
         raise HTTPException(status_code=502, detail="llm_error") from None
+    except BudgetExhausted:
+        raise HTTPException(status_code=429, detail="budget_exhausted") from None
 
 
 class ProfileOut(BaseModel):
@@ -161,10 +164,13 @@ async def create_digest(db: SessionDep, user: CurrentUser, guru: GuruDep):
     with map_guru_errors():
         report = await guru.generate_digest(db, user)
     # Spec: the take runs after each digest run. A stale/missing take must never
-    # fail the digest response -- log and move on.
+    # fail the digest response -- log and move on. BudgetExhausted is included
+    # here (not just LLMError/GenerationInProgress): the digest call just above
+    # can itself push the user over the cap, so the take retry hitting the cap
+    # is an expected outcome, not a server error.
     try:
         await guru.generate_take(db, user)
-    except (LLMError, GenerationInProgress):
+    except (LLMError, GenerationInProgress, BudgetExhausted):
         logger.exception("guru: take refresh after manual digest failed")
     return _report_out(report)
 

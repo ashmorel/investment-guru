@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from typing import Annotated
 
 from pydantic import field_validator
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
     guru_scan_model: str = "claude-haiku-4-5"
     guru_digest_hour: int = 7
     guru_timezone: str = "Europe/London"
+    guru_daily_budget_usd: Decimal = Decimal("1.00")
 
     # Discovery (Phase 4 Task 2) confirmed a stable, unauthenticated public JSON
     # endpoint for HSBC WMFS ORSO fund prices — see app/services/orso/prices.py.

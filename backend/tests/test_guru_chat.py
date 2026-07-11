@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -340,6 +340,32 @@ async def test_chat_unconfigured_503(auth_client):
     )
     assert resp.status_code == 503
     assert resp.json()["detail"] == "llm_unconfigured"
+
+
+async def test_chat_budget_exhausted_429_before_streaming(guru_client, db_session):
+    from app.core.config import settings
+
+    t = (await guru_client.post("/api/guru/chat/threads", json={"title": "T"})).json()
+
+    user = (await db_session.execute(
+        select(User).where(User.email == "lee@test.dev")
+    )).scalar_one()
+    db_session.add(LlmUsage(
+        user_id=user.id, mode="chat", model="claude-opus-4-8",
+        input_tokens=1, output_tokens=1, est_cost_usd=settings.guru_daily_budget_usd,
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+    ))
+    await db_session.commit()
+
+    resp = await guru_client.post(
+        f"/api/guru/chat/threads/{t['id']}/messages", json={"content": "hi"}
+    )
+    assert resp.status_code == 429
+    assert resp.json()["detail"] == "budget_exhausted"
+
+    # eager pre-stream check: no user message persisted, nothing streamed
+    detail = (await guru_client.get(f"/api/guru/chat/threads/{t['id']}")).json()
+    assert detail["messages"] == []
 
 
 async def test_usage_summary_aggregates(guru_client):

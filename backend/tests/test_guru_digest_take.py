@@ -194,3 +194,29 @@ async def test_manual_digest_survives_take_failure(guru_client, db_session, monk
     assert kinds == ["digest"]
 
     assert (await guru_client.get("/api/guru/take/latest")).status_code == 404
+
+
+async def test_manual_digest_survives_take_budget_exhausted(guru_client, db_session, monkeypatch):
+    from app.services.guru.budget import BudgetExhausted
+
+    guru_client.fake_llm.structured_queue.append(_digest())
+
+    # Digest succeeds normally; the take call is forced to hit the daily budget
+    # cap (as could genuinely happen if the digest call itself pushed the user
+    # over the cap) so we can assert create_digest's try/except around
+    # generate_take treats this the same as any other take-refresh failure.
+    async def _budget_exhausted_take(db, user):
+        raise BudgetExhausted("cap hit")
+
+    monkeypatch.setattr(guru_client.guru_service, "generate_take", _budget_exhausted_take)
+
+    resp = await guru_client.post("/api/guru/digest")
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "digest"
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    kinds = sorted(r.kind for r in rows)
+    assert kinds == ["digest"]
+
+    assert (await guru_client.get("/api/guru/take/latest")).status_code == 404
