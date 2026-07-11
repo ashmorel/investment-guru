@@ -5,13 +5,15 @@
 
 ## Status (2026-07-09)
 
-**ALL FIVE MASTER-SPEC PHASES COMPLETE AND LIVE IN PRODUCTION.**
+**ALL FIVE MASTER-SPEC PHASES + ENHANCEMENT PROJECT 1 (multi-user + encryption + admin) COMPLETE AND LIVE IN PRODUCTION.**
 
 - **Live app:** https://investment-guru-rose.vercel.app (Vercel frontend → `/api/*` rewrites → Railway backend)
 - Phase 1 portfolio core · 2a signals engine · 2b the Guru (LLM) · 4 ORSO pension · 5 cloud — all shipped, smoke-verified in prod, final whole-branch reviews merge-clean.
+- **Enhancement Project 1 (2026-07-09):** open registration + per-user isolation, encryption at rest (Fernet, `DATA_ENCRYPTION_KEY`), email-allowlist admin role + `/admin` shell, per-user daily LLM budget (429 `budget_exhausted`), opt-in daily digest. Live-smoke verified (encryption proven: prod ciphertext undecryptable with the committed dev key).
+- **Enhancement programme (5 projects):** 1 multi-user+encryption ✅ · 2 multi-provider LLM (OpenAI + admin config panel) · 3 dashboard/news UX · 4 user sector grouping · 5 sector-rotation advice. Specs land in `docs/superpowers/specs/` as each is designed; project-1 spec = `2026-07-09-multiuser-encryption-design.md`.
 - Full history: `docs/PROGRESS.md`. Specs/plans: `docs/superpowers/{specs,plans}/`. Ops: `docs/deployment.md`.
-- Only outstanding user step: import real Yahoo CSV + enter real ORSO allocation in the live UI.
-- Accepted maintenance minors (do NOT re-litigate; fix only if asked): login throttle is signalling-grade (bcrypt+strong password is the real control); an active lockout can be evicted under extreme email spray; Railway origin is directly reachable (all routes auth-gated); `/api/imports/commit` has no body-size cap.
+- Outstanding user step: import real Yahoo CSV + enter real ORSO allocation in the live UI.
+- Accepted maintenance minors (do NOT re-litigate; fix only if asked): login throttle is signalling-grade (bcrypt+strong password is the real control); an active lockout can be evicted under extreme email spray; Railway origin is directly reachable (all routes auth-gated); `/api/imports/commit` has no body-size cap. Encryption scope hides amounts/analysis/chat but NOT which tickers a user holds (structural instrument FK stays plaintext — a deliberate, approved choice).
 
 ## What this is
 

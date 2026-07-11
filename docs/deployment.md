@@ -12,6 +12,9 @@
 | `ENV` | Railway | Deployment environment | Set to `production` for prod; gates hardening (cookies, throttling, caps) |
 | `GURU_DIGEST_HOUR` | Railway (optional) | Daily digest trigger hour (UTC) | Integer 0–23; defaults to `7` |
 | `GURU_TIMEZONE` | Railway (optional) | Scheduler timezone for digest timing | IANA timezone string; defaults to `Europe/London` |
+| `DATA_ENCRYPTION_KEY` | Railway (**required in prod**) | Fernet key encrypting holdings/reports/chat at rest; MUST be distinct from `SECRET_KEY` and NOT the committed dev key (prod fails hard on either). Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **Durable secret — back it up; if lost, all encrypted data is unrecoverable.** Must be set before the first deploy that includes migration 0007. | generate + store in a password manager |
+| `ADMIN_EMAILS` | Railway (optional) | Comma-separated admin allowlist for the `/admin` area | defaults to the owner email; e.g. `a@x.com,b@x.com` |
+| `GURU_DAILY_BUDGET_USD` | Railway (optional) | Per-user daily LLM spend cap (429 `budget_exhausted` over it) | decimal; defaults to `1.00` |
 | `ORSO_HSBC_CLIENT_ID` | Railway (optional) | HSBC WMFS widget gateway header | [HSBC devtools](https://www.hsbc.co.uk/about-hsbc/policies-and-practices/digital-policies/developer-programs/) (leave empty if unused) |
 | `ORSO_HSBC_CLIENT_SECRET` | Railway (optional) | HSBC WMFS widget gateway header | [HSBC devtools](https://www.hsbc.co.uk/about-hsbc/policies-and-practices/digital-policies/developer-programs/) (leave empty if unused) |
 

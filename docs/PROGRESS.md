@@ -163,6 +163,49 @@ digest+take (always-on confirmed). Smoke ran under a throwaway user, fully
 purged afterwards — prod DB holds only the real account + seeded fund menu.
 Ops detail (env vars, rollback, backups, key rotation): `docs/deployment.md`.
 
+## Enhancement Project 1 — Multi-user + encryption + admin: COMPLETE
+
+Turned the single-user app into a real multi-user product. First of a five-project
+enhancement programme (2 = multi-provider LLM + admin config panel, 3 = dashboard/news
+UX, 4 = user sector grouping, 5 = sector-rotation advice).
+
+### Accounts & isolation
+Open self-service registration (`POST /api/auth/register`, EmailStr + password >=8,
+409 `email_taken` race-safe via IntegrityError catch, IP rate-limited). Per-user
+isolation was already enforced (`user_id` + `get_owned_*` 404s) and is now guarded by a
+central `test_isolation.py` sweep that asserts user B gets 404 AND user A's data is
+unchanged after every rejected cross-user mutation.
+
+### Encryption at rest (server-held key)
+`app/core/crypto.py` — Fernet (authenticated AES) behind three SQLAlchemy TypeDecorators
+(`EncryptedDecimal`/`EncryptedJSON`/`EncryptedText`, versioned `v1:` tokens for future key
+rotation). Encrypted columns: `positions.quantity`/`avg_cost`, `orso_allocations.units`/
+`contribution_pct`, `orso_switch_log` state, `guru_reports.payload`, `chat_messages.content`,
+`investor_profiles.free_text` (migration 0007, in-place). Structural FKs + shared market
+data stay plaintext (joins/valuation/signals keep working). `DATA_ENCRYPTION_KEY` env
+(distinct from `SECRET_KEY`); production fails hard if it's empty OR the committed dev key.
+`@validates` quantizers re-impose the old `Numeric` scales with ROUND_HALF_UP. A stolen DB
+reveals no amounts, analysis, or chat.
+
+### Admin + budget + opt-in digest
+Email-allowlist admin role (`ADMIN_EMAILS`, default the owner; `AdminUser` dep → 403
+`admin_only`; `me.is_admin`; `/api/admin/ping`; `/admin` area shell — LLM config lands in
+project 2). Per-user daily LLM budget (`app/services/guru/budget.py`, default $1.00/day,
+sums `llm_usage` since local-midnight → 429 `budget_exhausted`; wired into all Guru
+generate paths + chat). Daily digest is opt-in per user (`investor_profiles.digest_enabled`,
+Settings toggle); the scheduler iterates opted-in in-budget users with per-user failure
+isolation.
+
+### Verified end-to-end in production (2026-07-09)
+Registered a throwaway user through the live UI: `is_admin` false + `/api/admin/ping` 403
+(backend-enforced, not just nav-hidden); read of another user's portfolio → 404 (isolation);
+duplicate register → 409; weak password → 422; `.test` TLD correctly rejected by the
+validator. Encryption proof: the throwaway's position `quantity` is `v1:` ciphertext in the
+raw DB with the plaintext absent — and **undecryptable with the committed dev key** (only
+the prod `DATA_ENCRYPTION_KEY` works), while the running server round-trips it to `42.500000`
+via the API. Digest toggle persisted. Throwaway user + data purged; prod DB holds only the
+real account. Backend 268 tests, frontend 83, all green. Migration 0007 ran cleanly in prod.
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433
