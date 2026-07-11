@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     orso_hsbc_client_secret: str = ""
 
     env: str = "dev"
+    admin_emails: list[str] = ["lee_ashmore@hotmail.co.uk"]
 
     @field_validator("database_url")
     @classmethod

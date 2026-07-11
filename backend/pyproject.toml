@@ -23,6 +23,7 @@ dependencies = [
   "anthropic>=0.80",
   "apscheduler>=3.10",
   "cryptography>=43",
+  "pydantic[email]",
 ]
 
 [project.optional-dependencies]

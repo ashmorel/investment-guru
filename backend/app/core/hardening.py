@@ -43,8 +43,15 @@ class LoginThrottle:
     oldest failure entry is evicted to make room.
     """
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic):
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.monotonic,
+        max_failures: int = _MAX_FAILURES,
+        lockout_seconds: float = _LOCKOUT_SECONDS,
+    ):
         self._clock = clock
+        self._max_failures = max_failures
+        self._lockout_seconds = lockout_seconds
         self._failures: dict[str, int] = {}
         self._locked_until: dict[str, float] = {}
 
@@ -82,8 +89,8 @@ class LoginThrottle:
                 self._evict_oldest_failure()
         n = self._failures.get(email, 0) + 1
         self._failures[email] = n
-        if n >= _MAX_FAILURES:
-            self._locked_until[email] = self._clock() + _LOCKOUT_SECONDS
+        if n >= self._max_failures:
+            self._locked_until[email] = self._clock() + self._lockout_seconds
             self._failures[email] = 0
 
     def record_success(self, email: str) -> None:
@@ -92,6 +99,11 @@ class LoginThrottle:
 
 
 login_throttle = LoginThrottle()
+
+# Separate from login_throttle: keyed by client IP (not email) since
+# registration has no account identity yet. Looser threshold (10 vs 5) since
+# a shared IP (office/NAT) may have several people signing up legitimately.
+register_throttle = LoginThrottle(max_failures=10, lockout_seconds=60.0)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
