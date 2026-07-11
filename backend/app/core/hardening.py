@@ -1,6 +1,7 @@
 import time
 from collections.abc import Callable
 
+from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -22,6 +23,12 @@ def validate_production_settings(settings: Settings) -> None:
         raise RuntimeError(
             "SECRET_KEY must be set to a strong value (>=32 chars) in production"
         )
+    if not settings.data_encryption_key:
+        raise RuntimeError("DATA_ENCRYPTION_KEY must be set in production")
+    try:
+        Fernet(settings.data_encryption_key.encode())
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("DATA_ENCRYPTION_KEY must be a valid Fernet key") from exc
 
 
 class LoginThrottle:

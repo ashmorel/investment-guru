@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://guru:guru@localhost:5433/guru"
     secret_key: str = "dev-secret-not-for-production"
+    data_encryption_key: str = ""
     initial_user_email: str = "you@example.com"
     initial_user_password: str = "change-me"
 

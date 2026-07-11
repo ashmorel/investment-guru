@@ -1,3 +1,7 @@
+# NOTE: tests run with settings.data_encryption_key unset, so app.core.crypto
+# falls back to its fixed, non-secret dev key (_DEV_KEY_REAL) — no encryption
+# key setup is required here.
+
 from collections.abc import AsyncIterator
 
 import httpx

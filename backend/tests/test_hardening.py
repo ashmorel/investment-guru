@@ -16,16 +16,36 @@ def test_is_production_flag():
 
 
 def test_validate_production_settings_rejects_default_and_short_keys():
-    bad_default = Settings(env="production", secret_key="dev-secret-not-for-production")
+    from app.core.crypto import _active_key
+
+    bad_default = Settings(
+        env="production", secret_key="dev-secret-not-for-production",
+        data_encryption_key=_active_key(),
+    )
     with pytest.raises(RuntimeError):
         validate_production_settings(bad_default)
-    short = Settings(env="production", secret_key="x" * 31)
+    short = Settings(env="production", secret_key="x" * 31, data_encryption_key=_active_key())
     with pytest.raises(RuntimeError):
         validate_production_settings(short)
-    ok = Settings(env="production", secret_key="x" * 32)
+    ok = Settings(env="production", secret_key="x" * 32, data_encryption_key=_active_key())
     validate_production_settings(ok)  # no raise
     dev = Settings()  # default key fine outside production
     validate_production_settings(dev)
+
+
+def test_validate_production_settings_rejects_missing_and_invalid_encryption_key():
+    from app.core.crypto import _active_key
+
+    missing = Settings(env="production", secret_key="x" * 32, data_encryption_key="")
+    with pytest.raises(RuntimeError):
+        validate_production_settings(missing)
+    invalid = Settings(
+        env="production", secret_key="x" * 32, data_encryption_key="not-a-fernet-key"
+    )
+    with pytest.raises(RuntimeError):
+        validate_production_settings(invalid)
+    ok = Settings(env="production", secret_key="x" * 32, data_encryption_key=_active_key())
+    validate_production_settings(ok)  # no raise
 
 
 def test_login_throttle_state_stays_bounded_under_spray():
