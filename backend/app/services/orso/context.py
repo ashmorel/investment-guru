@@ -16,6 +16,11 @@ from app.services.valuation import FxService
 _RECENT_SWITCHES_LIMIT = 10
 
 
+async def _profile_currency(db, user):
+    from app.api.guru import get_profile_row
+    return await get_profile_row(db, user)
+
+
 async def _fund_menu(db: AsyncSession, user_id: int) -> list[str]:
     rows = (await db.execute(
         select(OrsoFund.code).where(OrsoFund.user_id == user_id).order_by(OrsoFund.code)
@@ -76,4 +81,14 @@ async def build_orso_context(
     ctx["fund_menu"] = await _fund_menu(db, user.id)
     ctx["goals"] = await _goals(db, user)
     ctx["recent_switches"] = await _recent_switches(db, user.id)
+    proj = overview.get("projection")
+    goals = ctx.get("goals")
+    ctx["display_currency"] = overview.get("display_currency")
+    ctx["total_display"] = overview.get("total_display")
+    ctx["monthly_contribution"] = (
+        None if goals is None else goals.get("orso_monthly_contribution"))
+    ctx["contribution_currency"] = getattr(
+        await _profile_currency(db, user), "orso_contribution_currency", "HKD")
+    ctx["goal_gap"] = None if proj is None else [
+        {"rate": s["rate"], "gap": s["gap"], "on_track": s["on_track"]} for s in proj]
     return ctx

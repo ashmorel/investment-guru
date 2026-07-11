@@ -25,6 +25,7 @@ def _orso_advice(codes, switches=(), disclaimer=DISCLAIMER):
         projection_comment="broadly on track",
         watch=["market volatility"],
         disclaimer=disclaimer,
+        contribution_suggestion="Maintain current monthly contribution.",
     )
 
 

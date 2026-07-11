@@ -19,9 +19,14 @@ from app.services.orso.prices import OrsoPriceService
 from app.services.valuation import FxService
 
 _ORSO_INSTRUCTION = (
-    "Advise on ORSO fund switching for this pension. Only reference fund codes from the "
-    "fund menu provided. Give a verdict for every fund currently holding units, a concrete "
-    "switch plan, and comment on the retirement projection."
+    "Advise on this ORSO pension. Only reference fund codes from the fund menu "
+    "provided. Give a verdict for every fund currently holding units and a concrete "
+    "switch plan. Then, using goal_gap (shortfall/surplus vs the target pot per growth "
+    "scenario, in display_currency) and monthly_contribution, give a "
+    "contribution_suggestion: a concrete, specific lever to close any gap — e.g. a "
+    "revised monthly contribution figure and/or an allocation shift by asset class — "
+    "framed as general guidance, not licensed financial advice. Comment on the "
+    "projection in projection_comment."
 )
 
 

@@ -80,6 +80,7 @@ class OrsoAdvicePayload(BaseModel):
     projection_comment: str
     watch: list[str]
     disclaimer: str
+    contribution_suggestion: str
 
 
 class ExtractedFundRow(BaseModel):
