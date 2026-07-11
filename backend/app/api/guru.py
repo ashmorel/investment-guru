@@ -51,6 +51,7 @@ class ProfileOut(BaseModel):
     horizon: str
     sector_interests: list[str]
     free_text: str
+    digest_enabled: bool = False
 
 
 class ProfileIn(BaseModel):
@@ -58,6 +59,7 @@ class ProfileIn(BaseModel):
     horizon: Literal["short", "medium", "long"]
     sector_interests: list[str]
     free_text: str
+    digest_enabled: bool = False
 
 
 async def get_profile_row(db, user) -> InvestorProfile | None:
@@ -71,9 +73,10 @@ async def read_profile(db: SessionDep, user: CurrentUser):
     row = await get_profile_row(db, user)
     if row is None:
         return ProfileOut(risk_appetite="balanced", horizon="medium",
-                          sector_interests=[], free_text="")
+                          sector_interests=[], free_text="", digest_enabled=False)
     return ProfileOut(risk_appetite=row.risk_appetite, horizon=row.horizon,
-                      sector_interests=row.sector_interests, free_text=row.free_text)
+                      sector_interests=row.sector_interests, free_text=row.free_text,
+                      digest_enabled=row.digest_enabled)
 
 
 @router.put("/profile", response_model=ProfileOut)
@@ -84,6 +87,7 @@ async def write_profile(body: ProfileIn, db: SessionDep, user: CurrentUser):
     values = dict(
         risk_appetite=body.risk_appetite, horizon=body.horizon,
         sector_interests=body.sector_interests, free_text=body.free_text,
+        digest_enabled=body.digest_enabled,
     )
     stmt = pg_insert(InvestorProfile).values(user_id=user.id, **values)
     stmt = stmt.on_conflict_do_update(index_elements=["user_id"], set_=values)

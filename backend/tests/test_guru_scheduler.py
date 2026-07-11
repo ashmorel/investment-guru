@@ -1,11 +1,12 @@
 import logging
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
 from app.core.security import hash_password
-from app.models import GuruReport, User
+from app.models import GuruReport, InvestorProfile, LlmUsage, User
 from app.services.guru.persona import DISCLAIMER
 from app.services.guru.schemas import (
     DigestPayload,
@@ -41,11 +42,16 @@ def _take():
     )
 
 
-async def _make_user(db_session, email: str) -> User:
+async def _make_user(db_session, email: str, *, digest_enabled: bool = True) -> User:
+    # digest_enabled defaults True here (not the model's own False default) so
+    # existing single-user scheduler tests, written before opt-in existed,
+    # keep exercising the scheduler without every call site having to opt in.
     user = User(email=email, password_hash=hash_password("pw123456"))
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
+    db_session.add(InvestorProfile(user_id=user.id, digest_enabled=digest_enabled))
+    await db_session.commit()
     return user
 
 
@@ -224,3 +230,68 @@ async def test_catch_up_runs_full_job_when_digest_missing(db_session, fake_llm, 
     rows = (await db_session.execute(select(GuruReport))).scalars().all()
     kinds = sorted(r.kind for r in rows)
     assert kinds == ["digest", "take"]
+
+
+async def test_run_daily_job_only_generates_for_opted_in_user(db_session, fake_llm, monkeypatch):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import run_daily_job
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+
+    opted_in = await _make_user(db_session, "optedin@test.dev", digest_enabled=True)
+    await _make_user(db_session, "optedout@test.dev", digest_enabled=False)
+    fake_llm.structured_queue.append(_digest())
+    fake_llm.structured_queue.append(_take())
+
+    await run_daily_job(session_factory=TestSession)
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    assert {r.user_id for r in rows} == {opted_in.id}
+    assert sorted(r.kind for r in rows) == ["digest", "take"]
+
+
+async def test_run_daily_job_skips_opted_in_user_over_budget(db_session, fake_llm, monkeypatch):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import run_daily_job
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+
+    user = await _make_user(db_session, "overbudget@test.dev")
+    db_session.add(LlmUsage(
+        user_id=user.id, mode="chat", model="x", input_tokens=0, output_tokens=0,
+        est_cost_usd=Decimal("5.00"), created_at=datetime.now(UTC).replace(tzinfo=None)))
+    await db_session.commit()
+
+    await run_daily_job(session_factory=TestSession)
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    assert rows == []
+    assert fake_llm.calls == []  # check_budget raised before any LLM call
+
+
+async def test_run_daily_job_one_user_failure_does_not_block_others(
+    db_session, fake_llm, monkeypatch, caplog,
+):
+    from app.services.guru import service as service_mod
+    from app.services.guru.scheduler import run_daily_job
+
+    monkeypatch.setattr(service_mod, "_service", GuruService(fake_llm, *_test_services()))
+
+    # Created (and therefore processed, by User.id order) first: its digest
+    # call is the very first structured call, which fail_structured=1 fails.
+    failing = await _make_user(db_session, "failing@test.dev")
+    healthy = await _make_user(db_session, "healthy@test.dev")
+
+    fake_llm.fail_structured = 1
+    fake_llm.structured_queue.append(_digest())
+    fake_llm.structured_queue.append(_take())
+
+    with caplog.at_level(logging.INFO, logger="app.services.guru.scheduler"):
+        await run_daily_job(session_factory=TestSession)
+
+    rows = (await db_session.execute(select(GuruReport))).scalars().all()
+    assert {r.user_id for r in rows} == {healthy.id}
+    assert sorted(r.kind for r in rows) == ["digest", "take"]
+    assert not (await db_session.execute(
+        select(GuruReport).where(GuruReport.user_id == failing.id))).scalars().all()
+    assert caplog.records  # the failing user's exception was logged, not raised

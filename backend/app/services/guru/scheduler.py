@@ -8,8 +8,9 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.models import GuruReport, User
-from app.services.guru.llm.base import LLMNotConfigured
+from app.models import GuruReport, InvestorProfile, User
+from app.services.guru.budget import BudgetExhausted
+from app.services.guru.llm.base import LLMError, LLMNotConfigured
 from app.services.guru.service import get_guru_service
 
 logger = logging.getLogger(__name__)
@@ -42,22 +43,42 @@ async def take_exists_today(db, user_id: int, *, now: datetime | None = None) ->
     return await _report_exists_today(db, user_id, "take", now)
 
 
+async def _opted_in_users(db) -> list[User]:
+    return (await db.execute(
+        select(User).join(InvestorProfile, InvestorProfile.user_id == User.id)
+        .where(InvestorProfile.digest_enabled.is_(True))
+        .order_by(User.id)
+    )).scalars().all()
+
+
+async def _generate_daily_for_user(db, svc, user: User) -> None:
+    """Generate digest + take for one user. Never lets an exception escape --
+    one user's failure (missing key, over budget, LLM error, or anything else)
+    must not abort the loop over the other opted-in users."""
+    try:
+        await svc.generate_digest(db, user)
+        await svc.generate_take(db, user)
+        logger.info("guru scheduler: digest + take generated for user %s", user.id)
+    except LLMNotConfigured:
+        logger.info("guru scheduler: no api key, skipping")
+    except BudgetExhausted:
+        logger.info("guru scheduler: budget exhausted for user %s, skipping", user.id)
+    except LLMError:
+        logger.exception("guru scheduler: daily job failed for user %s", user.id)
+    except Exception:
+        logger.exception("guru scheduler: daily job failed for user %s", user.id)
+
+
 async def run_daily_job(session_factory=None) -> None:
     factory = session_factory or SessionLocal
     svc = get_guru_service()
     async with factory() as db:
-        user = (await db.execute(select(User).order_by(User.id).limit(1))).scalar_one_or_none()
-        if user is None:
-            logger.info("guru scheduler: no user, skipping")
+        users = await _opted_in_users(db)
+        if not users:
+            logger.info("guru scheduler: no opted-in users, skipping")
             return
-        try:
-            await svc.generate_digest(db, user)
-            await svc.generate_take(db, user)
-            logger.info("guru scheduler: digest + take generated")
-        except LLMNotConfigured:
-            logger.info("guru scheduler: no api key, skipping")
-        except Exception:
-            logger.exception("guru scheduler: daily job failed")
+        for user in users:
+            await _generate_daily_for_user(db, svc, user)
 
 
 async def _run_guarded(db, user: User, coro_factory, *, log_ok: str, log_fail: str) -> None:
@@ -67,35 +88,38 @@ async def _run_guarded(db, user: User, coro_factory, *, log_ok: str, log_fail: s
         logger.info(log_ok)
     except LLMNotConfigured:
         logger.info("guru scheduler: no api key, skipping")
+    except BudgetExhausted:
+        logger.info("guru scheduler: budget exhausted for user %s, skipping", user.id)
     except Exception:
         logger.exception(log_fail)
 
 
 async def catch_up(session_factory=None) -> None:
     factory = session_factory or SessionLocal
-    async with factory() as db:
-        user = (await db.execute(select(User).order_by(User.id).limit(1))).scalar_one_or_none()
-        if user is None:
-            return
-        digest_missing = not await digest_exists_today(db, user.id)
-        take_missing = digest_missing or not await take_exists_today(db, user.id)
-
-    if digest_missing:
-        await run_daily_job(session_factory)
-        return
-    if not take_missing:
-        return
-
     svc = get_guru_service()
     async with factory() as db:
-        user = (await db.execute(select(User).order_by(User.id).limit(1))).scalar_one_or_none()
-        if user is None:
-            return
-        await _run_guarded(
-            db, user, lambda: svc.generate_take(db, user),
-            log_ok="guru scheduler: take generated (catch-up)",
-            log_fail="guru scheduler: catch-up take failed",
-        )
+        users = await _opted_in_users(db)
+        statuses = []
+        for user in users:
+            digest_missing = not await digest_exists_today(db, user.id)
+            take_missing = digest_missing or not await take_exists_today(db, user.id)
+            statuses.append((user.id, digest_missing, take_missing))
+
+    for user_id, digest_missing, take_missing in statuses:
+        if not take_missing:
+            continue
+        async with factory() as db:
+            user = await db.get(User, user_id)
+            if user is None:
+                continue
+            if digest_missing:
+                await _generate_daily_for_user(db, svc, user)
+            else:
+                await _run_guarded(
+                    db, user, lambda u=user: svc.generate_take(db, u),
+                    log_ok="guru scheduler: take generated (catch-up)",
+                    log_fail="guru scheduler: catch-up take failed",
+                )
 
 
 def create_scheduler() -> AsyncIOScheduler:
