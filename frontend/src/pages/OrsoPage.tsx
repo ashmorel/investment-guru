@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Money from "../components/Money";
 import VerdictChip from "../components/VerdictChip";
-import { ApiError, apiFetch, isBudgetExhausted } from "../lib/api";
+import { ApiError, apiFetch, isBudgetExhausted, setDisplayCurrency } from "../lib/api";
 import type {
   ChatThread,
   GuruReport,
@@ -92,36 +92,53 @@ function AllocationCard({ overview }: { overview: OrsoOverview }) {
     },
   });
 
+  const changeDisplayCurrency = useMutation({
+    mutationFn: (ccy: string) => setDisplayCurrency(ccy),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["orso", "overview"] }),
+  });
+
   return (
     <section className="rounded-xl border border-border bg-surface p-5 shadow">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <h2 className="font-medium text-text">Current allocation</h2>
-        <div className="text-right">
-          <button
-            type="button"
-            onClick={() => refresh.mutate()}
-            disabled={refresh.isPending || refreshUnavailable}
-            className="text-sm text-muted underline disabled:opacity-50"
-          >
-            {refresh.isPending ? "Refreshing…" : "⟳ Refresh prices"}
-          </button>
-          {refreshUnavailable && (
-            <p className="mt-1 text-xs text-muted">Manual prices only — the fetcher is unavailable.</p>
-          )}
+        <div className="flex items-start gap-3">
+          <label className="text-xs text-muted" htmlFor="orso-display-currency">
+            Display
+            <select
+              id="orso-display-currency"
+              value={overview.display_currency}
+              onChange={(e) => changeDisplayCurrency.mutate(e.target.value)}
+              disabled={changeDisplayCurrency.isPending}
+              className="mt-1 block rounded-md border border-border px-2 py-1 text-sm text-text disabled:opacity-50"
+            >
+              {["GBP", "USD", "HKD", "EUR", "AUD", "CAD", "SGD", "JPY"].map((ccy) => (
+                <option key={ccy} value={ccy}>
+                  {ccy}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="text-right">
+            <button
+              type="button"
+              onClick={() => refresh.mutate()}
+              disabled={refresh.isPending || refreshUnavailable}
+              className="text-sm text-muted underline disabled:opacity-50"
+            >
+              {refresh.isPending ? "Refreshing…" : "⟳ Refresh prices"}
+            </button>
+            {refreshUnavailable && (
+              <p className="mt-1 text-xs text-muted">Manual prices only — the fetcher is unavailable.</p>
+            )}
+          </div>
         </div>
       </div>
 
       <p className="mt-3 text-3xl font-semibold text-text">
-        <Money value={overview.total_hkd} ccy="HKD" />
+        <Money value={overview.total_display} ccy={overview.display_currency} />
       </p>
       <p className="mt-1 text-sm text-muted">
-        {overview.total_base ? (
-          <>
-            ≈ <Money value={overview.total_base.value} ccy={overview.total_base.currency} />
-          </>
-        ) : (
-          "≈ —"
-        )}
+        <Money value={overview.total_hkd} ccy="HKD" /> native
         {" · "}
         <button type="button" onClick={startEdit} className="text-accent underline">
           edit allocation
@@ -131,6 +148,13 @@ function AllocationCard({ overview }: { overview: OrsoOverview }) {
       {overview.flags.split_sum_off && (
         <p className="mt-3 rounded-md bg-[#FFFBEB] p-2 text-xs text-flag">
           The contribution split does not add up to 100%.
+        </p>
+      )}
+
+      {overview.flags.fx_unavailable.length > 0 && (
+        <p className="mt-3 rounded-md bg-[#FFFBEB] p-2 text-xs text-flag">
+          FX unavailable for: {overview.flags.fx_unavailable.join(", ")} — showing native value only.
+          Total excludes {overview.flags.fx_unavailable.length === 1 ? "this fund" : "these funds"}.
         </p>
       )}
 
@@ -144,6 +168,7 @@ function AllocationCard({ overview }: { overview: OrsoOverview }) {
               <th className="p-2 text-right font-medium">Units</th>
               <th className="p-2 text-right font-medium">Price (as of)</th>
               <th className="p-2 text-right font-medium">Value HKD</th>
+              <th className="p-2 text-right font-medium">Value ({overview.display_currency})</th>
               <th className="p-2 text-right font-medium">Split</th>
             </tr>
           </thead>
@@ -194,6 +219,13 @@ function AllocationCard({ overview }: { overview: OrsoOverview }) {
                   </td>
                   <td className="p-2 text-right">
                     <Money value={f.value_hkd} />
+                  </td>
+                  <td className="p-2 text-right">
+                    {overview.flags.fx_unavailable.includes(f.code) ? (
+                      <span className="text-xs text-flag">FX unavailable</span>
+                    ) : (
+                      <Money value={f.value_display} />
+                    )}
                   </td>
                   <td className="p-2 text-right tabular-nums">
                     {editing && !f.archived ? (
@@ -706,11 +738,16 @@ export default function OrsoPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-text">ORSO pension</h1>
-        <p className="text-sm text-muted">
-          HSBC ORSO (WMFS) · prices as of {new Date(data.as_of).toLocaleDateString()}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-text">ORSO pension</h1>
+          <p className="text-sm text-muted">
+            HSBC ORSO · prices as of {new Date(data.as_of).toLocaleDateString()}
+          </p>
+        </div>
+        <Link to="/orso/import" className="text-sm text-accent underline">
+          Import statement →
+        </Link>
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_420px]">
         <div className="space-y-6">

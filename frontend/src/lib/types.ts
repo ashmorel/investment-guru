@@ -114,9 +114,82 @@ export interface UsageSummary { by_mode: { mode: string; calls: number; input_to
 export interface ChatThread { id: number; title: string; portfolio_id: number | null; created_at: string; }
 export interface ChatMessage { id: number; role: "user" | "assistant"; content: string; created_at: string; }
 
-export interface OrsoFundRow { id: number; code: string; name: string; asset_class: string; risk_rating: number; archived: boolean; units: string | null; contribution_pct: string | null; price: string | null; price_as_of: string | null; price_source: "hsbc" | "manual" | null; value_hkd: string | null; }
-export interface OrsoOverview { funds: OrsoFundRow[]; total_hkd: string; total_base: { currency: string; value: string } | null; projection: { rate: string; projected_pot: string; on_track: boolean | null; gap: string | null }[] | null; flags: { stale: string[]; unpriced: string[]; split_sum_off: boolean; goals_incomplete: boolean }; as_of: string; }
+export interface OrsoFundRow { id: number; code: string; name: string; asset_class: string; risk_rating: number; archived: boolean; units: string | null; contribution_pct: string | null; currency: string; value_native: string | null; value_hkd: string | null; value_display: string | null; price: string | null; price_as_of: string | null; price_source: "hsbc" | "manual" | null; }
+export interface OrsoOverview { funds: OrsoFundRow[]; total_hkd: string; total_base: { currency: string; value: string } | null; total_display: string; display_currency: string; projection: { rate: string; projected_pot: string; on_track: boolean | null; gap: string | null }[] | null; flags: { stale: string[]; unpriced: string[]; split_sum_off: boolean; goals_incomplete: boolean; fx_unavailable: string[] }; as_of: string; }
 export interface OrsoGoals { birth_year: number | null; retirement_target_age: number | null; retirement_target_pot: string | null; orso_monthly_contribution: string | null; }
 export type OrsoAction = "keep" | "increase" | "reduce" | "exit";
 export interface OrsoAdvicePayload { fund_verdicts: { code: string; action: OrsoAction; conviction: Conviction; rationale: string }[]; switch_plan: { from_code: string | null; to_code: string | null; note: string }[]; projection_comment: string; watch: string[]; disclaimer: string; }
 export interface OrsoSwitchLogEntry { id: number; changed_at: string; note: string | null; }
+
+// --- ORSO ingest (Task 9) ---------------------------------------------------
+// Mirrors backend/app/services/orso/ingest.py (AllocationDraft/DraftRow/ProposedFund)
+// and backend/app/api/orso.py (ApplyRequest/ApplyItem/ApplyNewFund/FundOut).
+
+export interface ProposedFund {
+  code: string;
+  name: string;
+  currency: string;
+  asset_class: string;
+  risk_rating: number;
+}
+
+export interface DraftRow {
+  parsed_code: string;
+  parsed_name: string | null;
+  matched_fund_id: number | null;
+  proposed_fund: ProposedFund | null;
+  units: string | null;
+  value: string | null;
+  currency: string;
+  contribution_pct: string | null;
+  implied_price: string | null;
+  flags: string[];
+}
+
+export interface AllocationDraft {
+  rows: DraftRow[];
+  warnings: string[];
+  source: string;
+}
+
+export interface ApplyPrice {
+  market_value: string;
+  as_of: string;
+}
+
+export interface ApplyItem {
+  fund_id: number | null;
+  new_fund_code: string | null;
+  units: string;
+  contribution_pct: string;
+  price: ApplyPrice | null;
+}
+
+export interface ApplyNewFund {
+  code: string;
+  name: string;
+  currency: string;
+  asset_class?: string;
+  risk_rating?: number;
+}
+
+export interface ApplyRequest {
+  new_funds: ApplyNewFund[];
+  allocations: ApplyItem[];
+  note?: string | null;
+}
+
+export interface ApplyResult {
+  created_funds: string[];
+  switched: boolean;
+}
+
+export interface OrsoFundOut {
+  id: number;
+  code: string;
+  name: string;
+  asset_class: string;
+  risk_rating: number;
+  archived: boolean;
+  currency: string;
+}

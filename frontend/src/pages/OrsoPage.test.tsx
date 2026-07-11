@@ -27,10 +27,13 @@ const OVERVIEW = {
       archived: false,
       units: "1000.0000",
       contribution_pct: "61.00",
+      currency: "HKD",
       price: "477.0400",
       price_as_of: STALE_DATE,
       price_source: "hsbc",
+      value_native: "477040.00",
       value_hkd: "477040.00",
+      value_display: "47704.00",
     },
     {
       id: 2,
@@ -41,20 +44,31 @@ const OVERVIEW = {
       archived: false,
       units: "500.0000",
       contribution_pct: "39.00",
+      currency: "HKD",
       price: "130.9700",
       price_as_of: TODAY,
       price_source: "hsbc",
+      value_native: "65485.00",
       value_hkd: "65485.00",
+      value_display: "6548.50",
     },
   ],
   total_hkd: "542525.00",
   total_base: { currency: "GBP", value: "54252.50" },
+  total_display: "54252.50",
+  display_currency: "GBP",
   projection: [
     { rate: "0.02", projected_pot: "600000.00", on_track: false, gap: "-100000.00" },
     { rate: "0.05", projected_pot: "800000.00", on_track: true, gap: "50000.00" },
     { rate: "0.08", projected_pot: "1000000.00", on_track: true, gap: "200000.00" },
   ],
-  flags: { stale: ["HKEF"], unpriced: [], split_sum_off: true, goals_incomplete: false },
+  flags: {
+    stale: ["HKEF"],
+    unpriced: [],
+    split_sum_off: true,
+    goals_incomplete: false,
+    fx_unavailable: [],
+  },
   as_of: "2026-07-09T08:00:00Z",
 };
 
@@ -93,13 +107,20 @@ function mockApi(overrides?: {
   onRefresh?: () => Response | Promise<Response>;
   onAdvicePost?: () => Response | Promise<Response>;
   onThreadPost?: (body: unknown) => void;
+  onDisplayCurrencyPut?: (body: unknown) => void;
   adviceReports?: unknown[];
+  overview?: unknown;
 }) {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
 
-    if (url.includes("/api/orso/overview")) return jsonResponse(OVERVIEW);
+    if (url.includes("/api/orso/display-currency") && method === "PUT") {
+      const body = JSON.parse(String(init?.body));
+      overrides?.onDisplayCurrencyPut?.(body);
+      return jsonResponse({ currency: body.currency });
+    }
+    if (url.includes("/api/orso/overview")) return jsonResponse(overrides?.overview ?? OVERVIEW);
     if (url.includes("/api/orso/goals") && method === "GET") return jsonResponse(GOALS);
     if (url.includes("/api/orso/goals") && method === "PUT") {
       return jsonResponse({ ...GOALS, ...JSON.parse(String(init?.body)) });
@@ -371,6 +392,47 @@ describe("OrsoPage", () => {
     mockApi();
     renderPage();
     expect(await screen.findByText(/rebalanced into mmf/i)).toBeInTheDocument();
+  });
+
+  it("renders the display-currency total and per-fund display values", async () => {
+    mockApi();
+    renderPage();
+
+    await screen.findByText("HKEF");
+    expect(screen.getByText(/54,252\.50 GBP/)).toBeInTheDocument();
+    expect(screen.getByText(/47,704\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/6,548\.50/)).toBeInTheDocument();
+  });
+
+  it("shows an FX-unavailable banner and per-fund note when flags.fx_unavailable is non-empty", async () => {
+    mockApi({
+      overview: {
+        ...OVERVIEW,
+        funds: [
+          { ...OVERVIEW.funds[0], value_display: null },
+          OVERVIEW.funds[1],
+        ],
+        flags: { ...OVERVIEW.flags, fx_unavailable: ["HKEF"] },
+      },
+    });
+    renderPage();
+
+    await screen.findByText("HKEF");
+    expect(screen.getByText(/FX unavailable for: HKEF/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/FX unavailable/i).length).toBeGreaterThan(1);
+  });
+
+  it("PUTs the display currency and refetches the overview when the selector changes", async () => {
+    let posted: unknown = null;
+    mockApi({ onDisplayCurrencyPut: (body) => (posted = body) });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("HKEF");
+    const select = screen.getByLabelText(/display/i);
+    await user.selectOptions(select, "USD");
+
+    await waitFor(() => expect(posted).toEqual({ currency: "USD" }));
   });
 
   it("has no detectable accessibility violations", async () => {

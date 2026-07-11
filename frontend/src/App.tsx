@@ -8,6 +8,7 @@ import GuruPage from "./pages/GuruPage";
 import ImportWizardPage from "./pages/ImportWizardPage";
 import LoginPage from "./pages/LoginPage";
 import OrsoPage from "./pages/OrsoPage";
+import IngestWizard from "./pages/orso/IngestWizard";
 import PortfolioDetailPage from "./pages/PortfolioDetailPage";
 import PortfoliosPage from "./pages/PortfoliosPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -72,6 +73,7 @@ export default function App() {
             <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
             <Route path="/guru" element={<GuruPage />} />
             <Route path="/orso" element={<OrsoPage />} />
+            <Route path="/orso/import" element={<IngestWizard />} />
             <Route path="/import" element={<ImportWizardPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/admin" element={<AdminPage />} />
