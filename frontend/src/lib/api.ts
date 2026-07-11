@@ -7,6 +7,14 @@ export class ApiError extends Error {
   }
 }
 
+// Guru actions (take/digest/review/chat/orso advice) all raise the same
+// 429 {detail: "budget_exhausted"} once a user's daily LLM spend cap is hit.
+// apiFetch stores the raw error body text as ApiError.message, so this
+// checks for the detail string rather than parsing JSON.
+export function isBudgetExhausted(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 429 && error.message.includes("budget_exhausted");
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, {
     credentials: "include",

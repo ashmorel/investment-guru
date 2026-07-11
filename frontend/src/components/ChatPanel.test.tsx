@@ -152,6 +152,22 @@ describe("ChatPanel", () => {
     expect(screen.getByText(/llm_error/i)).toBeInTheDocument();
   });
 
+  it("shows the daily-limit message when the send rejects with a budget_exhausted 429", async () => {
+    mockApi();
+    mockStreamSSE.mockRejectedValue(new ApiError(429, '{"detail":"budget_exhausted"}'));
+
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByRole("button", { name: /reduce nvda/i });
+    await user.type(screen.getByLabelText(/message/i), "Ping");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(
+      await screen.findByText(/daily ai limit reached — resets tomorrow/i),
+    ).toBeInTheDocument();
+  });
+
   it("POSTs a new thread when + New thread is clicked", async () => {
     let posted = false;
     mockApi({ onThreadPost: () => (posted = true) });

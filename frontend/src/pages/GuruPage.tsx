@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import ChatPanel from "../components/ChatPanel";
 import GuruTakePanel from "../components/GuruTakePanel";
 import VerdictChip from "../components/VerdictChip";
-import { ApiError, apiFetch } from "../lib/api";
+import { ApiError, apiFetch, isBudgetExhausted } from "../lib/api";
 import type { DashboardData, DigestPayload, GuruReport, ReviewPayload } from "../lib/types";
 
 interface ReviewsResponse {
@@ -27,6 +27,7 @@ function DigestCard() {
   const notFound = digest.isError && digest.error instanceof ApiError && digest.error.status === 404;
   const unconfigured =
     generate.isError && generate.error instanceof ApiError && generate.error.status === 503;
+  const budgetExhausted = generate.isError && isBudgetExhausted(generate.error);
 
   return (
     <section className="rounded-xl border border-border bg-surface p-5 shadow">
@@ -46,6 +47,11 @@ function DigestCard() {
         <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
           The Guru isn't configured yet — an administrator needs to add an LLM API key before
           reports can be generated.
+        </p>
+      )}
+      {budgetExhausted && (
+        <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
+          Daily AI limit reached — resets tomorrow.
         </p>
       )}
 
@@ -126,6 +132,7 @@ function ReviewsCard() {
     runReview.isError && runReview.error instanceof ApiError && runReview.error.status === 503;
   const alreadyGenerating =
     runReview.isError && runReview.error instanceof ApiError && runReview.error.status === 409;
+  const budgetExhausted = runReview.isError && isBudgetExhausted(runReview.error);
 
   const list = reviews.data?.reviews ?? [];
   const expanded = list.find((r) => r.id === expandedId) ?? null;
@@ -172,6 +179,11 @@ function ReviewsCard() {
       )}
       {alreadyGenerating && (
         <p className="mt-3 text-sm text-flag">Already generating — check back shortly.</p>
+      )}
+      {budgetExhausted && (
+        <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
+          Daily AI limit reached — resets tomorrow.
+        </p>
       )}
 
       {list.length === 0 ? (

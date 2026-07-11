@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, apiFetch } from "../lib/api";
+import { ApiError, apiFetch, isBudgetExhausted } from "../lib/api";
 import { streamSSE } from "../lib/sse";
 import type { ChatMessage, ChatThread } from "../lib/types";
 
@@ -170,7 +170,11 @@ export default function ChatPanel({ discuss }: { discuss?: string | null }) {
     } catch (e) {
       if (sentThreadId !== activeThreadIdRef.current) return;
       setStreaming(false);
-      setSendError(e instanceof ApiError ? e.message : "Something went wrong.");
+      if (isBudgetExhausted(e)) {
+        setSendError("Daily AI limit reached — resets tomorrow.");
+      } else {
+        setSendError(e instanceof ApiError ? e.message : "Something went wrong.");
+      }
     }
   }
 

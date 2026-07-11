@@ -195,6 +195,23 @@ export default function SettingsPage() {
               />
             </label>
 
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-text" htmlFor="digest_enabled">
+                <input
+                  id="digest_enabled"
+                  type="checkbox"
+                  checked={form.digest_enabled}
+                  onChange={(e) => setForm({ ...form, digest_enabled: e.target.checked })}
+                  className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                />
+                Daily digest
+              </label>
+              <p className="mt-1 text-xs text-muted">
+                Get a daily summary of earnings, movers and news for your holdings.
+              </p>
+              <p className="mt-2 text-xs text-muted">Daily AI spend limit: resets each day.</p>
+            </div>
+
             <div className="flex items-center gap-3">
               <button
                 type="submit"

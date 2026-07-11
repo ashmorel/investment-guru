@@ -106,6 +106,24 @@ describe("GuruTakePanel", () => {
     expect(await screen.findByText(/already generating — check back shortly/i)).toBeInTheDocument();
   });
 
+  it("shows a daily-limit message when refresh returns 429 budget_exhausted", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/guru/take") && init?.method === "POST") {
+        return jsonResponse({ detail: "budget_exhausted" }, 429);
+      }
+      if (url.includes("/api/guru/take/latest")) return jsonResponse({ detail: "not found" }, 404);
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByText(/no take yet/i);
+    await user.click(screen.getByRole("button", { name: /refresh/i }));
+
+    expect(await screen.findByText(/daily ai limit reached — resets tomorrow/i)).toBeInTheDocument();
+  });
+
   it("fires a refresh POST then refetches the latest take", async () => {
     let posted = false;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

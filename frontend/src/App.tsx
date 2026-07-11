@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { apiFetch } from "./lib/api";
+import type { Me } from "./lib/types";
+import AdminPage from "./pages/AdminPage";
 import DashboardPage from "./pages/DashboardPage";
 import GuruPage from "./pages/GuruPage";
 import ImportWizardPage from "./pages/ImportWizardPage";
@@ -32,7 +34,7 @@ function NavItem({ to, label }: { to: string; label: string }) {
 function RequireAuth() {
   const me = useQuery({
     queryKey: ["me"],
-    queryFn: () => apiFetch<{ id: number; email: string }>("/api/auth/me"),
+    queryFn: () => apiFetch<Me>("/api/auth/me"),
     retry: false,
   });
   if (me.isPending) return <div className="p-8 text-muted">Loading…</div>;
@@ -48,6 +50,7 @@ function RequireAuth() {
           <NavItem to="/orso" label="ORSO" />
           <NavItem to="/import" label="Import CSV" />
           <NavItem to="/settings" label="Settings" />
+          {me.data?.is_admin && <NavItem to="/admin" label="Admin" />}
         </ul>
       </nav>
       <main className="flex-1 p-8">
@@ -71,6 +74,7 @@ export default function App() {
             <Route path="/orso" element={<OrsoPage />} />
             <Route path="/import" element={<ImportWizardPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

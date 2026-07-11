@@ -159,6 +159,30 @@ describe("GuruPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the daily-limit message when running a review returns 429 budget_exhausted", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/guru/take/latest")) return jsonResponse(TAKE);
+      if (url.includes("/api/guru/digest/latest")) return jsonResponse(DIGEST);
+      if (url.includes("/api/dashboard")) return jsonResponse(DASHBOARD);
+      if (url.includes("/api/guru/reviews") && init?.method === "POST") {
+        return jsonResponse({ detail: "budget_exhausted" }, 429);
+      }
+      if (url.includes("/api/guru/reviews")) return jsonResponse({ reviews: [REVIEW] });
+      if (url.includes("/api/guru/chat/threads")) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText(/core growth/i);
+    await user.click(screen.getByRole("button", { name: /run review/i }));
+
+    expect(
+      await screen.findByText(/daily ai limit reached — resets tomorrow/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows the disclaimer on every rendered report", async () => {
     mockApi();
     const user = userEvent.setup();

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ApiError, apiFetch } from "../lib/api";
+import { ApiError, apiFetch, isBudgetExhausted } from "../lib/api";
 import type { GuruReport, TakePayload } from "../lib/types";
 import VerdictChip from "./VerdictChip";
 
@@ -22,6 +22,7 @@ export default function GuruTakePanel() {
     refresh.isError && refresh.error instanceof ApiError && refresh.error.status === 503;
   const alreadyGenerating =
     refresh.isError && refresh.error instanceof ApiError && refresh.error.status === 409;
+  const budgetExhausted = refresh.isError && isBudgetExhausted(refresh.error);
 
   return (
     <section className="rounded-xl border border-border bg-surface p-5 shadow">
@@ -50,6 +51,11 @@ export default function GuruTakePanel() {
       )}
       {alreadyGenerating && (
         <p className="mt-3 text-sm text-flag">Already generating — check back shortly.</p>
+      )}
+      {budgetExhausted && (
+        <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
+          Daily AI limit reached — resets tomorrow.
+        </p>
       )}
 
       {take.isPending && <p className="mt-3 text-sm text-muted">Loading…</p>}

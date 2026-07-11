@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Money from "../components/Money";
 import VerdictChip from "../components/VerdictChip";
-import { ApiError, apiFetch } from "../lib/api";
+import { ApiError, apiFetch, isBudgetExhausted } from "../lib/api";
 import type {
   ChatThread,
   GuruReport,
@@ -337,6 +337,7 @@ function AdviceCard() {
     generate.isError && generate.error instanceof ApiError && generate.error.status === 503;
   const alreadyGenerating =
     generate.isError && generate.error instanceof ApiError && generate.error.status === 409;
+  const budgetExhausted = generate.isError && isBudgetExhausted(generate.error);
 
   const reports = adviceList.data?.reports ?? [];
   const latest = reports[0] ?? null;
@@ -369,6 +370,11 @@ function AdviceCard() {
       )}
       {alreadyGenerating && (
         <p className="mt-3 text-sm text-flag">Already generating — check back shortly.</p>
+      )}
+      {budgetExhausted && (
+        <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
+          Daily AI limit reached — resets tomorrow.
+        </p>
       )}
 
       {adviceList.isPending && <p className="mt-3 text-sm text-muted">Loading…</p>}

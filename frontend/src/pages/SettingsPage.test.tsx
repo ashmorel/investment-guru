@@ -12,6 +12,7 @@ const PROFILE: InvestorProfile = {
   horizon: "medium",
   sector_interests: ["Tech", "Healthcare"],
   free_text: "Prefer dividend payers.",
+  digest_enabled: false,
 };
 
 const USAGE: UsageSummary = {
@@ -124,6 +125,39 @@ describe("SettingsPage", () => {
     expect(within(reviewRow).getByText("900")).toBeInTheDocument();
     expect(within(reviewRow).getByText("$3.10")).toBeInTheDocument();
     expect(screen.getByText(/no hard caps/i)).toBeInTheDocument();
+  });
+
+  it("renders the daily-budget note near the digest toggle", async () => {
+    mockApi();
+    renderPage();
+
+    const toggle = await screen.findByRole("checkbox", { name: /daily digest/i });
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText(/daily ai spend limit: resets each day/i)).toBeInTheDocument();
+  });
+
+  it("PUTs digest_enabled when the daily digest toggle is switched on and saved", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderPage();
+
+    const toggle = await screen.findByRole("checkbox", { name: /daily digest/i });
+    await user.click(toggle);
+    expect(toggle).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+    expect(await screen.findByText(/saved just now/i)).toBeInTheDocument();
+
+    // Use the most recent PUT: the fetch spy's call history accumulates
+    // across every `it` in this file (no restoreMocks between tests), and an
+    // earlier test already issued its own PUT.
+    const putCalls = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT");
+    expect(putCalls.length).toBeGreaterThan(0);
+    const putCall = putCalls[putCalls.length - 1];
+    const body = JSON.parse(String((putCall[1] as RequestInit).body)) as InvestorProfile;
+    expect(body.digest_enabled).toBe(true);
   });
 
   it("has no detectable accessibility violations", async () => {
