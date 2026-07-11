@@ -296,8 +296,14 @@ async def test_overview_values_and_flags(orso_client, db_session):
                        units=Decimal("1"), contribution_pct=Decimal("10")),
     ])
     await db_session.commit()
-    await _add_price(db_session, f_priced.id, "5.00", date.today())
-    await _add_price(db_session, f_stale.id, "3.00", date.today() - timedelta(days=8))
+    # Seed price dates from the SAME clock build_overview measures staleness
+    # against (UTC), so the 8-day > _STALE_AFTER_DAYS(7) boundary is
+    # deterministic regardless of the runner's local timezone. Using local
+    # date.today() here flaked when local ran a day ahead of UTC (the gap
+    # collapsed to 7 and 7 > 7 is False).
+    today_utc = datetime.now(UTC).date()
+    await _add_price(db_session, f_priced.id, "5.00", today_utc)
+    await _add_price(db_session, f_stale.id, "3.00", today_utc - timedelta(days=8))
 
     ov = (await orso_client.get("/api/orso/overview")).json()
     by_code = {f["code"]: f for f in ov["funds"]}
