@@ -22,13 +22,43 @@ class DecryptError(Exception):
     pass
 
 
-def _active_key() -> str:
-    return settings.data_encryption_key or _DEV_KEY_REAL
-
-
 def is_dev_key(value: str) -> bool:
     """Check if the given key is the committed dev key."""
     return value == _DEV_KEY_REAL
+
+
+def split_keys(raw: str) -> list[str]:
+    """Parse a DATA_ENCRYPTION_KEY value into an ordered key list.
+
+    Supports rotation: a comma-separated value ``new,old`` puts the primary
+    (encrypt) key first and retains old keys for decrypt-only. A single-value
+    env var (the common case) parses to a one-element list. Fernet keys are
+    urlsafe-base64 (no commas), so splitting on ``,`` is unambiguous.
+    """
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
+
+def _active_keys() -> list[str]:
+    """The active key list. In production, refuse to fall back to the committed
+    dev key: migrations call ``encrypt()`` *before* the app's boot-time
+    ``validate_production_settings`` runs, so without this guard a key-less prod
+    deploy would silently write dev-key ciphertext (readable by anyone with the
+    public repo) to real financial columns."""
+    keys = split_keys(settings.data_encryption_key)
+    if settings.is_production:
+        if not keys:
+            raise RuntimeError("DATA_ENCRYPTION_KEY must be set in production")
+        if any(is_dev_key(k) for k in keys):
+            raise RuntimeError(
+                "DATA_ENCRYPTION_KEY must not be the committed dev key in production"
+            )
+        return keys
+    return keys or [_DEV_KEY_REAL]
+
+
+# Backwards-compatible accessor for the primary (encrypt) key.
+def _active_key() -> str:
+    return _active_keys()[0]
 
 
 class Crypto:
@@ -48,13 +78,13 @@ class Crypto:
 
 
 @lru_cache(maxsize=1)
-def _get_cached_crypto(key: str) -> Crypto:
-    """Cache Crypto instance based on the active key to avoid rebuilding Fernet."""
-    return Crypto([key])
+def _get_cached_crypto(keys_csv: str) -> Crypto:
+    """Cache Crypto instance keyed on the joined key list to avoid rebuilding Fernet."""
+    return Crypto(keys_csv.split(","))
 
 
 def _default() -> "Crypto":
-    return _get_cached_crypto(_active_key())
+    return _get_cached_crypto(",".join(_active_keys()))
 
 
 def encrypt(plaintext: str) -> str:

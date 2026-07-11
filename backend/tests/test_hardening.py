@@ -64,6 +64,32 @@ def test_validate_production_settings_rejects_committed_dev_key():
         validate_production_settings(bad)
 
 
+def test_validate_production_settings_accepts_rotation_key_list():
+    from cryptography.fernet import Fernet
+
+    new_key = Fernet.generate_key().decode()
+    old_key = Fernet.generate_key().decode()
+    ok = Settings(
+        env="production", secret_key="x" * 32,
+        data_encryption_key=f"{new_key},{old_key}",
+    )
+    validate_production_settings(ok)  # no raise — both keys valid
+
+
+def test_validate_production_settings_rejects_dev_key_anywhere_in_list():
+    from cryptography.fernet import Fernet
+
+    from app.core.crypto import _DEV_KEY_REAL
+
+    new_key = Fernet.generate_key().decode()
+    bad = Settings(
+        env="production", secret_key="x" * 32,
+        data_encryption_key=f"{new_key},{_DEV_KEY_REAL}",
+    )
+    with pytest.raises(RuntimeError, match="must not be the committed dev key"):
+        validate_production_settings(bad)
+
+
 def test_login_throttle_state_stays_bounded_under_spray():
     from app.core.hardening import _MAX_TRACKED
 

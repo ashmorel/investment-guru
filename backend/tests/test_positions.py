@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 
 from app.core.security import hash_password
 from app.models.user import User
@@ -32,6 +33,29 @@ async def test_position_crud(auth_client, make_instrument):
     assert len(listed.json()) == 1
 
     assert (await auth_client.delete(f"/api/positions/{pos_id}")).status_code == 204
+
+
+async def test_notes_encrypted_at_rest(auth_client, db_session, make_instrument):
+    await make_instrument("AAPL")
+    pid = await _make_portfolio(auth_client)
+    secret = "inheritance from dad — do not sell before probate"
+    created = await auth_client.post(
+        f"/api/portfolios/{pid}/positions",
+        json={"symbol": "AAPL", "quantity": "10", "avg_cost": "150.25", "notes": secret},
+    )
+    assert created.status_code == 201
+    pos_id = created.json()["id"]
+    # API returns the plaintext...
+    assert created.json()["notes"] == secret
+
+    # ...but the raw DB column holds ciphertext, not the plaintext note.
+    raw = (
+        await db_session.execute(
+            text("SELECT notes FROM positions WHERE id = :id"), {"id": pos_id}
+        )
+    ).scalar_one()
+    assert raw.startswith("v1:")
+    assert secret not in raw
 
 
 async def test_unknown_symbol_rejected(auth_client):

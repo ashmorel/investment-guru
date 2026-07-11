@@ -71,3 +71,49 @@ def test_is_dev_key():
     assert crypto.is_dev_key(crypto._DEV_KEY_REAL) is True
     assert crypto.is_dev_key("different-key") is False
     assert crypto.is_dev_key("") is False
+
+
+def test_split_keys_parses_single_and_rotation_lists():
+    assert crypto.split_keys("") == []
+    assert crypto.split_keys("k1") == ["k1"]
+    assert crypto.split_keys(" new , old ") == ["new", "old"]
+    assert crypto.split_keys("a,,b,") == ["a", "b"]
+
+
+def test_active_keys_refuses_dev_fallback_in_production(monkeypatch):
+    from app.core.config import settings
+
+    # In production a key-less config must raise rather than silently fall back
+    # to the committed dev key (the migration-before-boot trap).
+    monkeypatch.setattr(settings, "env", "production")
+    monkeypatch.setattr(settings, "data_encryption_key", "")
+    with pytest.raises(RuntimeError, match="must be set in production"):
+        crypto._active_keys()
+    monkeypatch.setattr(settings, "data_encryption_key", crypto._DEV_KEY_REAL)
+    with pytest.raises(RuntimeError, match="must not be the committed dev key"):
+        crypto._active_keys()
+
+
+def test_rotation_encrypts_with_primary_and_decrypts_old_tokens(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+
+    old_key = Fernet.generate_key().decode()
+    old_token = crypto.Crypto([old_key]).encrypt("legacy-value")
+
+    new_key = Fernet.generate_key().decode()
+    # Operator rotates: DATA_ENCRYPTION_KEY="new,old" — new is primary (encrypt),
+    # old is retained for decrypt.
+    monkeypatch.setattr(settings, "data_encryption_key", f"{new_key},{old_key}")
+    crypto._get_cached_crypto.cache_clear()
+    try:
+        # Old ciphertext still decrypts...
+        assert crypto.decrypt(old_token) == "legacy-value"
+        # ...and new writes use the new primary key (undecryptable by old alone).
+        fresh = crypto.encrypt("new-value")
+        assert crypto.decrypt(fresh) == "new-value"
+        with pytest.raises(crypto.DecryptError):
+            crypto.Crypto([old_key]).decrypt(fresh)
+    finally:
+        crypto._get_cached_crypto.cache_clear()

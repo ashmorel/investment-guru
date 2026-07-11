@@ -1,9 +1,9 @@
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from app.core.crypto import EncryptedDecimal
+from app.core.crypto import EncryptedDecimal, EncryptedText
 from app.core.db import Base
 from app.models.base import TimestampMixin
 from app.models.instrument import Instrument
@@ -34,7 +34,7 @@ class Position(TimestampMixin, Base):
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
     quantity: Mapped[Decimal | None] = mapped_column(EncryptedDecimal())
     avg_cost: Mapped[Decimal | None] = mapped_column(EncryptedDecimal())  # native ccy
-    notes: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(EncryptedText())
 
     portfolio: Mapped[Portfolio] = relationship(back_populates="positions")
     instrument: Mapped[Instrument] = relationship(lazy="selectin")

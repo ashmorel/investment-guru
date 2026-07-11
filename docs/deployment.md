@@ -12,7 +12,7 @@
 | `ENV` | Railway | Deployment environment | Set to `production` for prod; gates hardening (cookies, throttling, caps) |
 | `GURU_DIGEST_HOUR` | Railway (optional) | Daily digest trigger hour (UTC) | Integer 0–23; defaults to `7` |
 | `GURU_TIMEZONE` | Railway (optional) | Scheduler timezone for digest timing | IANA timezone string; defaults to `Europe/London` |
-| `DATA_ENCRYPTION_KEY` | Railway (**required in prod**) | Fernet key encrypting holdings/reports/chat at rest; MUST be distinct from `SECRET_KEY` and NOT the committed dev key (prod fails hard on either). Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **Durable secret — back it up; if lost, all encrypted data is unrecoverable.** Must be set before the first deploy that includes migration 0007. | generate + store in a password manager |
+| `DATA_ENCRYPTION_KEY` | Railway (**required in prod**) | Fernet key encrypting holdings/reports/chat/notes at rest; MUST be distinct from `SECRET_KEY` and NOT the committed dev key (prod fails hard on either, in any list position). Accepts a comma-separated `new,old` list for staged rotation (see Key Rotation below). Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **Durable secret — back it up; if lost, all encrypted data is unrecoverable.** Must be set before the first deploy that includes migration 0007. | generate + store in a password manager |
 | `ADMIN_EMAILS` | Railway (optional) | Comma-separated admin allowlist for the `/admin` area | defaults to the owner email; e.g. `a@x.com,b@x.com` |
 | `GURU_DAILY_BUDGET_USD` | Railway (optional) | Per-user daily LLM spend cap (429 `budget_exhausted` over it) | decimal; defaults to `1.00` |
 | `ORSO_HSBC_CLIENT_ID` | Railway (optional) | HSBC WMFS widget gateway header | [HSBC devtools](https://www.hsbc.co.uk/about-hsbc/policies-and-practices/digital-policies/developer-programs/) (leave empty if unused) |
@@ -171,6 +171,29 @@ If a session key is compromised:
 2. Update Railway backend variable `ANTHROPIC_API_KEY`
 3. Redeploy backend service
 4. No session impact; chat/digest continues immediately after redeploy
+
+### DATA_ENCRYPTION_KEY (at-rest crypto — the crown jewel)
+
+This key decrypts every encrypted column (holdings, ORSO allocations, Guru
+reports, chat, profile/position notes). Losing it makes that data
+**unrecoverable**, and a naive one-for-one swap makes all existing ciphertext
+undecryptable. Rotation is therefore staged via a **comma-separated key list**
+(`new,old`): the **first** key is used to encrypt new writes, and **all** keys
+are tried on decrypt, so old ciphertext keeps working until it is re-wrapped.
+
+1. Generate a new key:
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+2. Set `DATA_ENCRYPTION_KEY` to **`<new-key>,<old-key>`** (new first) in Railway and redeploy.
+   New writes now use the new key; existing rows still decrypt via the old key.
+3. Re-wrap existing rows onto the new key (rewrite each encrypted row so it is
+   re-encrypted with the new primary). Until a re-wrap migration exists, the
+   safe interim state is to **keep the old key in the list** — do not remove it.
+4. Once every row is confirmed re-wrapped, set `DATA_ENCRYPTION_KEY` to just
+   `<new-key>` and redeploy; retire the old key from your password manager.
+
+Production refuses an empty value, an invalid Fernet key, or the committed dev
+key **in any position** of the list (`validate_production_settings`). Keep every
+key in the list backed up in a password manager for as long as it appears.
 
 ---
 

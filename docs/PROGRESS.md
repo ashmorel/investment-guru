@@ -206,6 +206,19 @@ the prod `DATA_ENCRYPTION_KEY` works), while the running server round-trips it t
 via the API. Digest toggle persisted. Throwaway user + data purged; prod DB holds only the
 real account. Backend 268 tests, frontend 83, all green. Migration 0007 ran cleanly in prod.
 
+### Post-review fix-forward (2026-07-11)
+Final whole-branch Opus security review came back with no Critical findings; three Important
+items were fixed forward. (1) **`positions.notes` now encrypted** — it was the one user-authored
+free-text field left plaintext; switched to `EncryptedText` + migration **0008** (in-place, same
+already-Text path as 0007; upgrade/downgrade round-trip proven against a real alembic DB). (2)
+**Dev-key-in-prod migration trap closed** — the crypto layer now refuses to fall back to the
+committed dev key when `env=production` (migrations call `encrypt()` before the app's boot-time
+guard runs, so a key-less deploy would otherwise have written dev-key ciphertext to real
+columns). (3) **Key rotation path** — `DATA_ENCRYPTION_KEY` accepts a comma-separated `new,old`
+list (encrypt with the first, decrypt with any); prod validation rejects an invalid/dev key in
+any list position; runbook added to `docs/deployment.md`. Also (Minor) `run_daily_job` now uses a
+fresh DB session per user (matches `catch_up`). Backend **274** tests green (6 new).
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433

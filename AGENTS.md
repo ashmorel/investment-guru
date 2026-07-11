@@ -13,7 +13,8 @@
 - **Enhancement programme (5 projects):** 1 multi-user+encryption ✅ · 2 multi-provider LLM (OpenAI + admin config panel) · 3 dashboard/news UX · 4 user sector grouping · 5 sector-rotation advice. Specs land in `docs/superpowers/specs/` as each is designed; project-1 spec = `2026-07-09-multiuser-encryption-design.md`.
 - Full history: `docs/PROGRESS.md`. Specs/plans: `docs/superpowers/{specs,plans}/`. Ops: `docs/deployment.md`.
 - Outstanding user step: import real Yahoo CSV + enter real ORSO allocation in the live UI.
-- Accepted maintenance minors (do NOT re-litigate; fix only if asked): login throttle is signalling-grade (bcrypt+strong password is the real control); an active lockout can be evicted under extreme email spray; Railway origin is directly reachable (all routes auth-gated); `/api/imports/commit` has no body-size cap. Encryption scope hides amounts/analysis/chat but NOT which tickers a user holds (structural instrument FK stays plaintext — a deliberate, approved choice).
+- Accepted maintenance minors (do NOT re-litigate; fix only if asked): login throttle is signalling-grade (bcrypt+strong password is the real control); an active lockout can be evicted under extreme email spray; Railway origin is directly reachable (all routes auth-gated); `/api/imports/commit` has no body-size cap. Encryption scope hides amounts/analysis/chat/notes but NOT which tickers a user holds (structural instrument FK stays plaintext — a deliberate, approved choice).
+- **Enhancement Project 1 post-review fix-forward (2026-07-11):** `positions.notes` now encrypted at rest (migration **0008**, `EncryptedText`); the crypto layer refuses the committed dev key as an at-rest fallback in production (closes the migration-runs-before-boot trap); `DATA_ENCRYPTION_KEY` supports a `new,old` comma-separated list for staged key rotation (encrypt with first, decrypt with any — runbook in `docs/deployment.md`); scheduler `run_daily_job` uses a fresh DB session per user (matches `catch_up`).
 
 ## What this is
 
@@ -28,7 +29,7 @@ output (`client.messages.parse`); chat is the only free-text path.
 
 ## Stack & layout
 
-- `backend/` — FastAPI + SQLAlchemy 2 async + Alembic (head **0006**) + Postgres; APScheduler in-process
+- `backend/` — FastAPI + SQLAlchemy 2 async + Alembic (head **0008**) + Postgres; APScheduler in-process
   (single replica = the scheduler). `app/services/{market_data,signals,guru,orso}/` behind provider
   abstractions; `app/api/*` routers. LLM: `app/services/guru/llm/` (AnthropicProvider; FakeLLMProvider for tests).
   Models config: advice `claude-opus-4-8`, scan `claude-haiku-4-5` (swap via env).

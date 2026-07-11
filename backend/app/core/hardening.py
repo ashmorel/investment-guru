@@ -24,14 +24,20 @@ def validate_production_settings(settings: Settings) -> None:
         raise RuntimeError(
             "SECRET_KEY must be set to a strong value (>=32 chars) in production"
         )
-    if not settings.data_encryption_key:
+    keys = crypto.split_keys(settings.data_encryption_key)
+    if not keys:
         raise RuntimeError("DATA_ENCRYPTION_KEY must be set in production")
-    try:
-        Fernet(settings.data_encryption_key.encode())
-    except (ValueError, TypeError) as exc:
-        raise RuntimeError("DATA_ENCRYPTION_KEY must be a valid Fernet key") from exc
-    if crypto.is_dev_key(settings.data_encryption_key):
-        raise RuntimeError("DATA_ENCRYPTION_KEY must not be the committed dev key in production")
+    # A comma-separated value enables key rotation (new,old); every key in the
+    # list must be a valid Fernet key and none may be the committed dev key.
+    for key in keys:
+        try:
+            Fernet(key.encode())
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError("DATA_ENCRYPTION_KEY must be a valid Fernet key") from exc
+        if crypto.is_dev_key(key):
+            raise RuntimeError(
+                "DATA_ENCRYPTION_KEY must not be the committed dev key in production"
+            )
 
 
 class LoginThrottle:

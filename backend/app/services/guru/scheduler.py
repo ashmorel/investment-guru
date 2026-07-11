@@ -73,11 +73,18 @@ async def run_daily_job(session_factory=None) -> None:
     factory = session_factory or SessionLocal
     svc = get_guru_service()
     async with factory() as db:
-        users = await _opted_in_users(db)
-        if not users:
-            logger.info("guru scheduler: no opted-in users, skipping")
-            return
-        for user in users:
+        user_ids = [u.id for u in await _opted_in_users(db)]
+    if not user_ids:
+        logger.info("guru scheduler: no opted-in users, skipping")
+        return
+    # Fresh session per user (like catch_up): a failure that leaves one user's
+    # session in a pending-rollback state must not cascade into every
+    # subsequent user in the loop.
+    for user_id in user_ids:
+        async with factory() as db:
+            user = await db.get(User, user_id)
+            if user is None:
+                continue
             await _generate_daily_for_user(db, svc, user)
 
 
