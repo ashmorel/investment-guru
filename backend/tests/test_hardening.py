@@ -181,3 +181,27 @@ def test_database_url_normalised():
     assert s2.database_url.startswith("postgresql+asyncpg://")
     s3 = Settings(database_url="postgresql+asyncpg://u:p@host:5432/db")
     assert s3.database_url == "postgresql+asyncpg://u:p@host:5432/db"
+
+
+def test_admin_emails_parses_comma_separated_string():
+    s = Settings(admin_emails="a@x.com, b@x.com")
+    assert s.admin_emails == ["a@x.com", "b@x.com"]
+
+
+def test_admin_emails_parses_comma_separated_env_var(monkeypatch):
+    # An operator setting ADMIN_EMAILS in the environment (not the .env
+    # file) must not hit pydantic-settings' JSON-only default parsing for
+    # list fields.
+    monkeypatch.setenv("ADMIN_EMAILS", "a@x.com,b@x.com")
+    s = Settings()
+    assert s.admin_emails == ["a@x.com", "b@x.com"]
+
+
+def test_admin_emails_still_accepts_json_array_string():
+    s = Settings(admin_emails='["a@x.com", "b@x.com"]')
+    assert s.admin_emails == ["a@x.com", "b@x.com"]
+
+
+def test_admin_emails_default_unchanged():
+    s = Settings()
+    assert s.admin_emails == ["lee_ashmore@hotmail.co.uk"]

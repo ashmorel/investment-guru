@@ -1,5 +1,8 @@
+import json
+from typing import Annotated
+
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -29,7 +32,11 @@ class Settings(BaseSettings):
     orso_hsbc_client_secret: str = ""
 
     env: str = "dev"
-    admin_emails: list[str] = ["lee_ashmore@hotmail.co.uk"]
+    # NoDecode: pydantic-settings would otherwise require this env var to be
+    # valid JSON (`ADMIN_EMAILS=["a@x.com"]`) and hard-error on plain CSV
+    # before our validator ever runs. Skipping its decode hands the raw
+    # string to `_parse_admin_emails` below instead.
+    admin_emails: Annotated[list[str], NoDecode] = ["lee_ashmore@hotmail.co.uk"]
 
     @field_validator("database_url")
     @classmethod
@@ -38,6 +45,24 @@ class Settings(BaseSettings):
             return "postgresql+asyncpg://" + v[len("postgres://"):]
         if v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
             return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
+
+    @field_validator("admin_emails", mode="before")
+    @classmethod
+    def _parse_admin_emails(cls, v):
+        # Accept a plain comma-separated string, the operator-friendly form
+        # (`ADMIN_EMAILS=a@x.com,b@x.com`), a JSON array string, or an
+        # already-parsed list (the Python-side default, or a constructor
+        # kwarg) — whatever shows up once NoDecode has skipped
+        # pydantic-settings' default JSON-only env parsing.
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    return json.loads(stripped)
+                except json.JSONDecodeError:
+                    pass
+            return [email.strip() for email in stripped.split(",") if email.strip()]
         return v
 
     @property

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
@@ -69,7 +70,14 @@ async def register(body: RegisterIn, request: Request, response: Response, db: S
 
     user = User(email=body.email, password_hash=hash_password(body.password))
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Two concurrent registrations for the same email can both pass the
+        # SELECT above; the loser's commit hits the unique constraint. Map
+        # that race to the same 409 the pre-check returns instead of a 500.
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="email_taken") from None
     await db.refresh(user)
 
     response.set_cookie(
