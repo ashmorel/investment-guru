@@ -36,8 +36,9 @@ class GuruReport(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(8))  # review | digest | take
+    kind: Mapped[str] = mapped_column(String(8))  # review | digest | take | orso | news
     portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id"))
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"), index=True)
     payload: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON())
     model: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column()

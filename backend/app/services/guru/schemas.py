@@ -94,3 +94,10 @@ class ExtractedFundRow(BaseModel):
 
 class OrsoStatementExtraction(BaseModel):
     rows: list[ExtractedFundRow]
+
+
+class NewsSummaryPayload(BaseModel):
+    summary: str
+    sentiment: Literal["positive", "negative", "neutral", "watch"]
+    key_points: list[str]
+    disclaimer: str
