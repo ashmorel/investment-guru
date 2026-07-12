@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
+from app.api.valuation import get_services
 from app.models import GroupAssignment, HoldingGroup, Instrument, Portfolio, Position
+from app.services.groups.exposure import compute_group_exposure
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -157,3 +162,17 @@ async def seed_from_sectors(db: SessionDep, user: CurrentUser):
         assigned += 1
     await db.commit()
     return SeedOut(created=created, assigned=assigned)
+
+
+@router.get("/exposure")
+async def exposure(db: SessionDep, user: CurrentUser,
+                   services: Annotated[tuple, Depends(get_services)],
+                   portfolio_id: int | None = None):
+    quotes, fx = services
+    if portfolio_id is not None:
+        pf = await db.get(Portfolio, portfolio_id)
+        if pf is None or pf.user_id != user.id:
+            raise HTTPException(status_code=404, detail="portfolio_not_found")
+    result = await compute_group_exposure(db, user, quotes, fx, portfolio_id)
+    result["as_of"] = datetime.now(UTC).isoformat()
+    return result
