@@ -1,4 +1,7 @@
-from datetime import UTC, datetime
+import logging
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,8 +11,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.valuation import get_services
-from app.models import GroupAssignment, HoldingGroup, Instrument, Portfolio, Position
-from app.services.groups.exposure import compute_group_exposure
+from app.models import GroupAssignment, GroupSnapshot, HoldingGroup, Instrument, Portfolio, Position
+from app.services.groups.exposure import compute_group_exposure, write_snapshot
+
+_RANGE_DAYS = {"30d": 30, "90d": 90, "1y": 365}
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -174,6 +181,52 @@ async def exposure(db: SessionDep, user: CurrentUser,
         if pf is None or pf.user_id != user.id:
             raise HTTPException(status_code=404, detail="portfolio_not_found")
     result = await compute_group_exposure(db, user, quotes, fx, portfolio_id)
-    await db.commit()  # persist any FxRate rows cached by fx.get_rate during valuation
+    if portfolio_id is None:
+        # Opportunistic snapshot: only for the whole-account view. A
+        # portfolio-scoped view is a partial breakdown and would corrupt
+        # today's trend point if written as if it were the full picture.
+        # Best-effort only (the daily job / a concurrent request already
+        # covers today), so a failure here — e.g. two concurrent first-of-day
+        # requests racing the (user_id, group_id, as_of) unique constraint —
+        # must never fail the exposure request. Roll back and still return 200.
+        try:
+            await write_snapshot(db, user, result, datetime.now(UTC).date())
+            await db.commit()  # persists snapshot rows + FxRate rows cached by fx.get_rate
+        except Exception:
+            logger.exception("opportunistic group snapshot write failed")
+            await db.rollback()
+    else:
+        await db.commit()  # persist any FxRate rows cached by fx.get_rate during valuation
     result["as_of"] = datetime.now(UTC).isoformat()
     return result
+
+
+@router.get("/trend")
+async def trend(db: SessionDep, user: CurrentUser, range: str = "30d"):
+    days = _RANGE_DAYS.get(range, 30)
+    cutoff = datetime.now(UTC).date() - timedelta(days=days)
+    rows = (await db.execute(
+        select(GroupSnapshot).where(
+            GroupSnapshot.user_id == user.id, GroupSnapshot.as_of >= cutoff)
+        .order_by(GroupSnapshot.as_of)
+    )).scalars().all()
+    groups = {g.id: g for g in (await db.execute(
+        select(HoldingGroup).where(HoldingGroup.user_id == user.id))).scalars().all()}
+    # per-date totals for pct
+    by_date: dict = defaultdict(lambda: Decimal("0"))
+    for r in rows:
+        by_date[r.as_of] += r.value_base
+    series: dict = defaultdict(lambda: {"points": []})
+    for r in rows:
+        name = groups[r.group_id].name if r.group_id in groups else "Ungrouped"
+        color = groups[r.group_id].color if r.group_id in groups else ""
+        total = by_date[r.as_of]
+        pct = ((r.value_base / total * 100).quantize(Decimal("0.01"))
+               if total > 0 else Decimal("0.00"))
+        s = series[(r.group_id, name, color)]
+        s["points"].append({"as_of": r.as_of.isoformat(),
+                            "value_base": str(r.value_base.quantize(Decimal("0.01"))),
+                            "pct": str(pct)})
+    out = [{"group_id": k[0], "name": k[1], "color": k[2], "points": v["points"]}
+           for k, v in series.items()]
+    return {"series": out, "as_of": datetime.now(UTC).isoformat()}

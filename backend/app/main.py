@@ -34,14 +34,18 @@ def _log_catch_up_result(task: asyncio.Task) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.services.groups.snapshot import snapshot_catch_up
     from app.services.guru.scheduler import catch_up, create_scheduler
 
     sched = create_scheduler()
     sched.start()
     task = asyncio.create_task(catch_up())
     task.add_done_callback(_log_catch_up_result)
+    snap_task = asyncio.create_task(snapshot_catch_up())
+    snap_task.add_done_callback(_log_catch_up_result)
     yield
     task.cancel()
+    snap_task.cancel()
     sched.shutdown(wait=False)
 
 

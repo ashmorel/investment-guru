@@ -1,8 +1,10 @@
+from datetime import date as _date
 from decimal import Decimal
 
+from sqlalchemy import delete as _delete
 from sqlalchemy import select
 
-from app.models import GroupAssignment, HoldingGroup, Portfolio
+from app.models import GroupAssignment, GroupSnapshot, HoldingGroup, Portfolio
 from app.services.valuation import value_portfolio
 
 _Q = Decimal("0.01")
@@ -71,3 +73,15 @@ async def compute_group_exposure(db, user, quote_service, fx, portfolio_id=None)
     out_groups.sort(key=lambda x: Decimal(x["value_base"]), reverse=True)
     return {"groups": out_groups, "total_base": str(total.quantize(_Q)),
             "unpriced": sorted(set(unpriced))}
+
+
+async def write_snapshot(db, user, exposure_result: dict, as_of: _date) -> None:
+    """Idempotent daily snapshot: delete this user's rows for `as_of`, then
+    insert one per group (incl. the null Ungrouped bucket). Safe for the NULL
+    group_id (a plain unique upsert can't dedupe NULLs)."""
+    await db.execute(_delete(GroupSnapshot).where(
+        GroupSnapshot.user_id == user.id, GroupSnapshot.as_of == as_of))
+    for grp in exposure_result["groups"]:
+        db.add(GroupSnapshot(user_id=user.id, group_id=grp["group_id"], as_of=as_of,
+                             value_base=Decimal(grp["value_base"])))
+    await db.flush()
