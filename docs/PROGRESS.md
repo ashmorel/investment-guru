@@ -263,7 +263,46 @@ CSV fuzzy-name→normalized-equality, apply archived-fund guard). A pre-existing
 test flake was fixed in passing. Live: migration 0009 clean, `/api/health` 200, all 5 new endpoints
 mounted (401 unauth). **Domain fact:** user is on the HSBC Local Staff DC Scheme (not WMFS), so
 statement-derived prices are primary. Remaining user step: run the first real ingest to seed the fund
-catalogue in prod.
+catalogue in prod. (Prod fund menu since seeded via `python -m app.seed_orso_lsrbs`: 18 LSRBS funds
+HKD/USD/EUR, 14 legacy WMFS archived.)
+
+## Enhancement — Multi-provider LLM + admin config: COMPLETE (2026-07-12, migration 0010)
+
+The Guru can run on **Anthropic / OpenAI / Google Gemini**, chosen at runtime from the admin panel —
+no code change or redeploy. Spec `docs/superpowers/specs/2026-07-12-multiprovider-llm-admin-design.md`,
+plan `.../plans/2026-07-12-multiprovider-llm-admin.md`. Live in prod (0009→0010 clean; endpoints 401
+unauth). Final Opus whole-branch review: see the review report.
+
+### Config + storage
+Single-row `llm_config` (`app/models/guru.py`): provider, advice_model, scan_model, `api_key`
+(**EncryptedText**, Fernet at rest — never returned to the client), optional per-role $/1M prices,
+updated_at/by. `load_active_config(db)` (`app/services/guru/config.py`): a saved row is authoritative,
+else env fallback (`ANTHROPIC_API_KEY` + `guru_*_model`), so prod ran unchanged until the panel is used.
+
+### Adapters + factory
+Three `LLMProvider` implementations in `app/services/guru/llm/`: `AnthropicProvider` (canonical shape,
+unchanged), `OpenAIProvider` and `GoogleProvider` translate Anthropic-shaped messages (system routing,
+base64 image blocks, **per-message role** preserved — assistant→Gemini "model" so multi-turn/retry
+conversations don't collapse), structured-parse + usage mapping, all failures → uniform `LLMError`.
+`factory.build_provider(provider, key)` picks the adapter. `get_guru_service(db)` is now **async,
+config-driven, and rebuildable**: `invalidate_guru_service()` clears the cache on save so the next
+request uses the new provider/model/key (single Railway replica). Role→model wiring: advice paths use
+`advice_model`+`advice_price`, digest uses `scan_model`+`scan_price` (no swap). `estimate_cost(model,
+usage, price=)` resolves config price → built-in OpenAI/Gemini table → None (logged, not budget-counted).
+
+### Admin API + panel
+`app/api/admin.py` under `AdminUser` (403 non-admin): `GET /api/admin/llm-config` (returns config +
+`key_set` bool — **never the key**), `PUT` (upsert; **omitted/blank api_key preserves the stored key**;
+bad provider/price → 422; calls `invalidate_guru_service()` on save), `POST /llm-config/test` (one
+minimal live call; error `detail` **scrubbed** of the submitted key incl. Google `key=`/`sk-`/`AIza`
+forms; never 500). Frontend panel in `AdminPage.tsx` (provider select, model ids, write-only key with
+"configured" pill, optional budget grid, Test button); `npm run check` green (98 tests incl. vitest-axe).
+
+### Verified
+Backend **324** tests; each of the 6 backend tasks reviewed with fix loops (notable: Gemini multi-turn
+role preservation; `/test` key-scrub + price→422). All 3 adapters verified against the live SDKs via
+context7 (openai 2.45, google-genai 2.11) and mock-tested (no real keys/network). **`ANTHROPIC_API_KEY`
+env is now only the pre-panel fallback** — the active provider/key live in the encrypted `llm_config` row.
 
 ## How to run locally
 ```bash

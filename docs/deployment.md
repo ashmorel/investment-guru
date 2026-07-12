@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `DATABASE_URL` | Railway | PostgreSQL connection string | [Railway Postgres service reference](https://docs.railway.app/guides/postgresql) (automatically injected) |
 | `SECRET_KEY` | Railway | Session/token encryption key; ≥32 chars, production startup fails if invalid | Generate: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `ANTHROPIC_API_KEY` | Railway | Claude API access for advice/digest generation | [Anthropic Console](https://console.anthropic.com/account/keys) |
+| `ANTHROPIC_API_KEY` | Railway | **Pre-panel fallback only** since migration 0010: the active LLM provider/model/key are set in the admin `/admin` panel (encrypted `llm_config` row) and override this. Used only when no `llm_config` row exists yet. | [Anthropic Console](https://console.anthropic.com/account/keys) |
 | `INITIAL_USER_EMAIL` | Railway | Admin account email (seed-only; production refuses `you@example.com`) | Use real email (e.g., `admin@investikid.com`) |
 | `INITIAL_USER_PASSWORD` | Railway | Admin account password (seed-only; production refuses `change-me`) | Generate a strong password; recommended 20+ characters |
 | `ENV` | Railway | Deployment environment | Set to `production` for prod; gates hardening (cookies, throttling, caps) |
