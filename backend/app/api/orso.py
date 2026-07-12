@@ -85,7 +85,8 @@ async def ingest_screenshot(db: SessionDep, user: CurrentUser, guru: GuruDep,
         raise HTTPException(status_code=503, detail="llm_unconfigured")
     b64 = base64.b64encode(data).decode()
     with map_guru_errors():
-        return await extract_statement(provider, db, user.id, b64, file.content_type)
+        return await extract_statement(provider, db, user.id, b64, file.content_type,
+                                        model=guru.advice_model, price=guru.advice_price)
 
 
 # --- funds CRUD ------------------------------------------------------------

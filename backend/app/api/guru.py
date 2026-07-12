@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/guru", tags=["guru"])
 
 
-def get_guru() -> GuruService:
-    return get_guru_service()
+async def get_guru(db: SessionDep) -> GuruService:
+    return await get_guru_service(db)
 
 
 GuruDep = Annotated[GuruService, Depends(get_guru)]

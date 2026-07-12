@@ -5,12 +5,10 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models import GuruReport, Portfolio, User
 from app.services.guru import usage as usage_mod
 from app.services.guru.budget import check_budget
 from app.services.guru.context import build_context
-from app.services.guru.llm.anthropic import AnthropicProvider
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
 from app.services.guru.schemas import DigestPayload, OrsoAdvicePayload, ReviewPayload, TakePayload
@@ -46,10 +44,16 @@ def _now() -> datetime:
 
 
 class GuruService:
-    def __init__(self, provider: LLMProvider | None, quotes: QuoteService, fx: FxService):
+    def __init__(self, provider: LLMProvider | None, quotes: QuoteService, fx: FxService, *,
+                 advice_model: str, scan_model: str,
+                 advice_price: tuple | None = None, scan_price: tuple | None = None):
         self.provider = provider
         self.quotes = quotes
         self.fx = fx
+        self.advice_model = advice_model
+        self.scan_model = scan_model
+        self.advice_price = advice_price
+        self.scan_price = scan_price
         self._locks: dict[str, asyncio.Lock] = {}
 
     def _lock(self, kind: str) -> asyncio.Lock:
@@ -82,7 +86,7 @@ class GuruService:
                          + json.dumps(ctx)}]
             payload, usage = await provider.generate_structured(
                 system=PERSONA_V1, messages=messages, schema=ReviewPayload,
-                model=settings.guru_advice_model, max_tokens=4096)
+                model=self.advice_model, max_tokens=4096)
             missing = expected - {p.symbol for p in payload.positions}
             if missing:
                 messages += [
@@ -94,7 +98,7 @@ class GuruService:
                 first_usage = usage
                 payload, usage = await provider.generate_structured(
                     system=PERSONA_V1, messages=messages, schema=ReviewPayload,
-                    model=settings.guru_advice_model, max_tokens=4096)
+                    model=self.advice_model, max_tokens=4096)
                 usage = Usage(input_tokens=first_usage.input_tokens + usage.input_tokens,
                               output_tokens=first_usage.output_tokens + usage.output_tokens)
                 missing = expected - {p.symbol for p in payload.positions}
@@ -102,12 +106,13 @@ class GuruService:
                     raise LLMError(f"review still missing positions: {sorted(missing)}")
             report = GuruReport(user_id=user.id, kind="review", portfolio_id=portfolio.id,
                                 payload=payload.model_dump(),
-                                model=settings.guru_advice_model, created_at=_now())
+                                model=self.advice_model, created_at=_now())
             db.add(report)
             await db.flush()
             await usage_mod.record_usage(db, user_id=user.id, mode="review",
-                                         model=settings.guru_advice_model,
-                                         usage=usage, report_id=report.id)
+                                         model=self.advice_model,
+                                         usage=usage, report_id=report.id,
+                                         price=self.advice_price)
             await db.commit()
             return report
 
@@ -128,7 +133,7 @@ class GuruService:
                          _ORSO_INSTRUCTION + "\n\n" + json.dumps(ctx)}]
             payload, usage = await provider.generate_structured(
                 system=PERSONA_V1, messages=messages, schema=OrsoAdvicePayload,
-                model=settings.guru_advice_model, max_tokens=4096)
+                model=self.advice_model, max_tokens=4096)
             invalid = _orso_invalid_codes(payload, fund_menu)
             if invalid:
                 messages += [
@@ -141,7 +146,7 @@ class GuruService:
                 first_usage = usage
                 payload, usage = await provider.generate_structured(
                     system=PERSONA_V1, messages=messages, schema=OrsoAdvicePayload,
-                    model=settings.guru_advice_model, max_tokens=4096)
+                    model=self.advice_model, max_tokens=4096)
                 usage = Usage(input_tokens=first_usage.input_tokens + usage.input_tokens,
                               output_tokens=first_usage.output_tokens + usage.output_tokens)
                 invalid = _orso_invalid_codes(payload, fund_menu)
@@ -149,12 +154,13 @@ class GuruService:
                     raise LLMError(f"orso advice referenced invalid fund codes: {sorted(invalid)}")
             report = GuruReport(user_id=user.id, kind="orso", portfolio_id=None,
                                 payload=payload.model_dump(),
-                                model=settings.guru_advice_model, created_at=_now())
+                                model=self.advice_model, created_at=_now())
             db.add(report)
             await db.flush()
             await usage_mod.record_usage(db, user_id=user.id, mode="orso",
-                                         model=settings.guru_advice_model,
-                                         usage=usage, report_id=report.id)
+                                         model=self.advice_model,
+                                         usage=usage, report_id=report.id,
+                                         price=self.advice_price)
             await db.commit()
             return report
 
@@ -164,7 +170,7 @@ class GuruService:
         )).scalars().all()
 
     async def _generate_global(self, db: AsyncSession, user: User, *, kind: str, schema,
-                               model: str, instruction: str,
+                               model: str, instruction: str, price: tuple | None = None,
                                extra_context: str = "", max_tokens: int = 2048) -> GuruReport:
         provider = self._require_provider()
         lock = self._lock(kind)
@@ -185,7 +191,7 @@ class GuruService:
             db.add(report)
             await db.flush()
             await usage_mod.record_usage(db, user_id=user.id, mode=kind, model=model,
-                                         usage=usage, report_id=report.id)
+                                         usage=usage, report_id=report.id, price=price)
             await db.commit()
             return report
 
@@ -197,7 +203,8 @@ class GuruService:
 
     async def generate_digest(self, db: AsyncSession, user: User) -> GuruReport:
         return await self._generate_global(
-            db, user, kind="digest", schema=DigestPayload, model=settings.guru_scan_model,
+            db, user, kind="digest", schema=DigestPayload, model=self.scan_model,
+            price=self.scan_price,
             instruction="Produce this morning's digest: earnings this week, notable movers, "
                         "flagged news. One-line commentary per item.")
 
@@ -207,7 +214,8 @@ class GuruService:
             "\n\nLatest daily digest:\n" + json.dumps(digest.payload)
             if digest is not None else "")
         return await self._generate_global(
-            db, user, kind="take", schema=TakePayload, model=settings.guru_advice_model,
+            db, user, kind="take", schema=TakePayload, model=self.advice_model,
+            price=self.advice_price,
             instruction="Give your portfolio-level take: what moved and why, key risks vs the "
                         "investor's profile, and rebalance ideas with conviction.",
             extra_context=extra_context, max_tokens=4096)
@@ -216,16 +224,26 @@ class GuruService:
 _service: GuruService | None = None
 
 
-def get_guru_service() -> GuruService:
+async def get_guru_service(db: AsyncSession) -> GuruService:
     global _service
     if _service is None:
+        from app.services.guru.config import load_active_config
+        from app.services.guru.llm.factory import build_provider
+        from app.services.market_data.quotes import get_quote_service
+
+        cfg = await load_active_config(db)
+        provider = build_provider(cfg.provider, cfg.api_key) if cfg.api_key else None
         # Mirror app.services.signals.engine.get_engine: obtain the shared QuoteService
         # singleton and reuse its underlying provider for FxService, rather than
         # constructing a second YahooProvider.
-        from app.services.market_data.quotes import get_quote_service
-
-        provider = (AnthropicProvider(settings.anthropic_api_key)
-                    if settings.anthropic_api_key else None)
         qs = get_quote_service()
-        _service = GuruService(provider, qs, FxService(qs.provider))
+        _service = GuruService(
+            provider, qs, FxService(qs.provider),
+            advice_model=cfg.advice_model, scan_model=cfg.scan_model,
+            advice_price=cfg.advice_price, scan_price=cfg.scan_price)
     return _service
+
+
+def invalidate_guru_service() -> None:
+    global _service
+    _service = None

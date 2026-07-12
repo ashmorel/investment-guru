@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.portfolios import get_owned_portfolio
-from app.core.config import settings
 from app.models import ChatMessage, ChatThread, User
 from app.services.guru import usage as usage_mod
 from app.services.guru.budget import check_budget
@@ -52,7 +51,7 @@ class ChatService:
         system, messages = await self._build_messages(
             db, user, thread, price_service, fx_service)
         stream = provider.stream_text(system=system, messages=messages,
-                                      model=settings.guru_advice_model, max_tokens=2048)
+                                      model=self.guru.advice_model, max_tokens=2048)
         parts: list[str] = []
         try:
             async for chunk in stream:
@@ -68,8 +67,8 @@ class ChatService:
         await db.flush()
         usage = stream.usage or Usage(input_tokens=0, output_tokens=0)
         await usage_mod.record_usage(db, user_id=user.id, mode="chat",
-                                     model=settings.guru_advice_model, usage=usage,
-                                     thread_id=thread.id)
+                                     model=self.guru.advice_model, usage=usage,
+                                     thread_id=thread.id, price=self.guru.advice_price)
         await db.commit()
         yield {"event": "done", "data": {"message_id": assistant.id,
                                          "input_tokens": usage.input_tokens,

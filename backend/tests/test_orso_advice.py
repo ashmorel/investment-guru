@@ -184,7 +184,8 @@ async def test_advice_unconfigured_503(orso_client, db_session):
     from app.api.guru import get_guru
 
     await _seed_basic(orso_client, db_session)
-    svc = GuruService(None, *(_test_services()))
+    svc = GuruService(None, *(_test_services()),
+                      advice_model="test-advice", scan_model="test-scan")
     orso_client.app.dependency_overrides[get_guru] = lambda: svc
 
     resp = await orso_client.post("/api/orso/advice")

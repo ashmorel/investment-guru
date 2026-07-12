@@ -4,7 +4,6 @@ no LLM-layer change. Governed by the per-user daily budget; usage is recorded.
 Output is always a reviewable AllocationDraft (never auto-committed)."""
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.services.guru import usage as usage_mod
 from app.services.guru.budget import check_budget
 from app.services.guru.llm.base import LLMProvider
@@ -20,7 +19,7 @@ _INSTRUCTION = (
 
 async def extract_statement(
     provider: LLMProvider, db: AsyncSession, user_id: int,
-    image_b64: str, media_type: str,
+    image_b64: str, media_type: str, *, model: str, price=None,
 ) -> AllocationDraft:
     await check_budget(db, user_id)
     messages = [{"role": "user", "content": [
@@ -31,9 +30,9 @@ async def extract_statement(
     payload, usage = await provider.generate_structured(
         system="You extract structured data from financial statement images.",
         messages=messages, schema=OrsoStatementExtraction,
-        model=settings.guru_advice_model, max_tokens=2048)
+        model=model, max_tokens=2048)
     await usage_mod.record_usage(db, user_id=user_id, mode="orso_ingest",
-                                 model=settings.guru_advice_model, usage=usage)
+                                 model=model, usage=usage, price=price)
     await db.commit()
     parsed = [{"fund_code": r.fund_code, "fund_name": r.fund_name, "units": r.units,
                "value": r.value, "currency": r.currency,

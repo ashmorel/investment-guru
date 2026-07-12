@@ -105,7 +105,8 @@ async def test_review_unconfigured_503(auth_client, make_instrument):
     from app.api.guru import get_guru
 
     pf_id = await _seed_portfolio(auth_client, make_instrument)
-    svc = GuruService(None, *(_test_services()))
+    svc = GuruService(None, *(_test_services()),
+                      advice_model="test-advice", scan_model="test-scan")
     auth_client.app.dependency_overrides[get_guru] = lambda: svc
 
     resp = await auth_client.post("/api/guru/reviews", json={"portfolio_id": pf_id})
@@ -136,7 +137,8 @@ async def test_generate_review_second_call_while_locked_raises(db_session, make_
 
     fake = FakeLLMProvider()
     fake.structured_queue.append(_review(["AAPL"]))
-    svc = GuruService(fake, *(_test_services()))
+    svc = GuruService(fake, *(_test_services()),
+                      advice_model="test-advice", scan_model="test-scan")
 
     first = asyncio.create_task(svc.generate_review(db_session, user, pf))
     await asyncio.sleep(0)  # let `first` run its synchronous prefix and enter the lock

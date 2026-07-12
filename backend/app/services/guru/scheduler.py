@@ -71,8 +71,8 @@ async def _generate_daily_for_user(db, svc, user: User) -> None:
 
 async def run_daily_job(session_factory=None) -> None:
     factory = session_factory or SessionLocal
-    svc = get_guru_service()
     async with factory() as db:
+        svc = await get_guru_service(db)
         user_ids = [u.id for u in await _opted_in_users(db)]
     if not user_ids:
         logger.info("guru scheduler: no opted-in users, skipping")
@@ -103,8 +103,8 @@ async def _run_guarded(db, user: User, coro_factory, *, log_ok: str, log_fail: s
 
 async def catch_up(session_factory=None) -> None:
     factory = session_factory or SessionLocal
-    svc = get_guru_service()
     async with factory() as db:
+        svc = await get_guru_service(db)
         users = await _opted_in_users(db)
         statuses = []
         for user in users:

@@ -155,10 +155,19 @@ def fake_llm():
 
 @pytest_asyncio.fixture
 async def guru_client(auth_client, fake_llm) -> httpx.AsyncClient:
+    from decimal import Decimal
+
     from app.api.guru import get_guru
     from app.services.guru.service import GuruService
 
-    svc = GuruService(fake_llm, *(_test_services()))
+    # advice_price/scan_price are supplied here (rather than left None) so that
+    # usage-cost estimation still works for the fake "test-advice"/"test-scan"
+    # model names, which aren't in usage.py's _PRICES_PER_MTOK lookup table --
+    # mirrors how a real per-role price override from LlmConfig would behave.
+    svc = GuruService(fake_llm, *(_test_services()),
+                      advice_model="test-advice", scan_model="test-scan",
+                      advice_price=(Decimal("1"), Decimal("5")),
+                      scan_price=(Decimal("1"), Decimal("5")))
     auth_client.app.dependency_overrides[get_guru] = lambda: svc
     auth_client.fake_llm = fake_llm
     auth_client.guru_service = svc

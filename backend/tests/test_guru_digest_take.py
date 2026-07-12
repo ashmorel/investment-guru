@@ -46,8 +46,8 @@ async def test_digest_generates_with_scan_model(guru_client, db_session):
     body = resp.json()
     assert body["kind"] == "digest"
     assert body["portfolio_id"] is None
-    assert body["model"] == "claude-haiku-4-5"
-    assert guru_client.fake_llm.calls[0]["model"] == "claude-haiku-4-5"
+    assert body["model"] == "test-scan"
+    assert guru_client.fake_llm.calls[0]["model"] == "test-scan"
 
     latest = await guru_client.get("/api/guru/digest/latest")
     assert latest.status_code == 200
@@ -58,7 +58,7 @@ async def test_digest_generates_with_scan_model(guru_client, db_session):
     )).scalars().all()
     assert len(rows) == 1
     assert rows[0].mode == "digest"
-    assert rows[0].model == "claude-haiku-4-5"
+    assert rows[0].model == "test-scan"
 
 
 async def test_take_uses_advice_model_and_sees_latest_digest(guru_client, db_session):
@@ -79,10 +79,10 @@ async def test_take_uses_advice_model_and_sees_latest_digest(guru_client, db_ses
     body = resp.json()
     assert body["kind"] == "take"
     assert body["portfolio_id"] is None
-    assert body["model"] == "claude-opus-4-8"
+    assert body["model"] == "test-advice"
 
     take_call = guru_client.fake_llm.calls[-1]
-    assert take_call["model"] == "claude-opus-4-8"
+    assert take_call["model"] == "test-advice"
     assert take_call["max_tokens"] == 4096
     user_message = take_call["messages"][0]["content"]
     assert digest.summary in user_message  # context handoff from latest digest
@@ -138,7 +138,8 @@ async def test_take_provider_failure_502_nothing_persisted(guru_client, db_sessi
 async def test_digest_unconfigured_503(auth_client):
     from app.api.guru import get_guru
 
-    svc = GuruService(None, *(_test_services()))
+    svc = GuruService(None, *(_test_services()),
+                      advice_model="test-advice", scan_model="test-scan")
     auth_client.app.dependency_overrides[get_guru] = lambda: svc
 
     resp = await auth_client.post("/api/guru/digest")

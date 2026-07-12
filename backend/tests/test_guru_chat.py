@@ -328,7 +328,8 @@ async def test_chat_stream_failure_keeps_user_message_only(guru_client):
 async def test_chat_unconfigured_503(auth_client):
     from app.api.guru import get_guru
 
-    svc = GuruService(None, *(_test_services()))
+    svc = GuruService(None, *(_test_services()),
+                      advice_model="test-advice", scan_model="test-scan")
     auth_client.app.dependency_overrides[get_guru] = lambda: svc
 
     created = await auth_client.post("/api/guru/chat/threads", json={"title": "T"})
