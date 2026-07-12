@@ -11,6 +11,7 @@ import OrsoPage from "./pages/OrsoPage";
 import IngestWizard from "./pages/orso/IngestWizard";
 import PortfolioDetailPage from "./pages/PortfolioDetailPage";
 import PortfoliosPage from "./pages/PortfoliosPage";
+import SectorsPage from "./pages/SectorsPage";
 import SettingsPage from "./pages/SettingsPage";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ function RequireAuth() {
         <ul className="space-y-1 text-sm">
           <NavItem to="/" label="Dashboard" />
           <NavItem to="/portfolios" label="Portfolios" />
+          <NavItem to="/sectors" label="Sectors" />
           <NavItem to="/guru" label="Guru" />
           <NavItem to="/orso" label="ORSO" />
           <NavItem to="/import" label="Import CSV" />
@@ -71,6 +73,7 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/portfolios" element={<PortfoliosPage />} />
             <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
+            <Route path="/sectors" element={<SectorsPage />} />
             <Route path="/guru" element={<GuruPage />} />
             <Route path="/orso" element={<OrsoPage />} />
             <Route path="/orso/import" element={<IngestWizard />} />

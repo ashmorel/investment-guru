@@ -2,14 +2,20 @@ import type {
   AllocationDraft,
   ApplyRequest,
   ApplyResult,
+  AssignResult,
+  GroupExposure,
+  GroupTrend,
   GuruReport,
+  HoldingGroup,
   LlmConfig,
   LlmConfigInput,
   NewsResponse,
   NewsSummary,
   OrsoFundOut,
   RefreshNewsResult,
+  SeedGroupsResult,
   StockNews,
+  TrendRange,
 } from "./types";
 
 export class ApiError extends Error {
@@ -209,4 +215,45 @@ export function newsSummaryErrorMessage(error: unknown): string | null {
     default:
       return null;
   }
+}
+
+// --- Sector/theme groups (Task 6) --------------------------------------------
+// Mirrors backend/app/api/groups.py (GroupOut/GroupIn/GroupPatch/AssignIn/
+// SeedOut) and the exposure/trend dict shapes in
+// backend/app/services/groups/exposure.py + backend/app/api/groups.py.
+
+export function getGroups(): Promise<HoldingGroup[]> {
+  return apiFetch<HoldingGroup[]>("/api/groups");
+}
+
+export function createGroup(body: { name: string; color?: string }): Promise<HoldingGroup> {
+  return apiFetch<HoldingGroup>("/api/groups", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateGroup(
+  id: number,
+  body: { name?: string; color?: string; sort_order?: number },
+): Promise<HoldingGroup> {
+  return apiFetch<HoldingGroup>(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export function deleteGroup(id: number): Promise<void> {
+  return apiFetch<void>(`/api/groups/${id}`, { method: "DELETE" });
+}
+
+export function assignGroup(body: { symbol: string; group_id: number | null }): Promise<AssignResult> {
+  return apiFetch<AssignResult>("/api/groups/assign", { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function seedGroups(): Promise<SeedGroupsResult> {
+  return apiFetch<SeedGroupsResult>("/api/groups/seed-from-sectors", { method: "POST" });
+}
+
+export function getGroupExposure(portfolioId?: number | null): Promise<GroupExposure> {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : "";
+  return apiFetch<GroupExposure>(`/api/groups/exposure${qs}`);
+}
+
+export function getGroupTrend(range: TrendRange = "30d"): Promise<GroupTrend> {
+  return apiFetch<GroupTrend>(`/api/groups/trend?range=${range}`);
 }

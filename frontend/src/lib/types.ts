@@ -267,3 +267,63 @@ export interface LlmConfigInput {
   scan_input_price?: string | null;
   scan_output_price?: string | null;
 }
+
+// --- Sector/theme groups (Task 6) --------------------------------------------
+// Mirrors backend/app/api/groups.py (GroupOut/SeedOut) and
+// backend/app/services/groups/exposure.py (compute_group_exposure's dict
+// shape, returned as-is by GET /api/groups/exposure) plus the trend route's
+// dict shape in groups.py (GET /api/groups/trend).
+
+export interface HoldingGroup {
+  id: number;
+  name: string;
+  color: string;
+  sort_order: number;
+  holding_count: number;
+}
+
+export interface SeedGroupsResult {
+  created: string[];
+  assigned: number;
+}
+
+export interface AssignResult {
+  symbol: string;
+  group_id: number | null;
+}
+
+export interface GroupExposureItem {
+  group_id: number | null;
+  name: string;
+  color: string;
+  value_base: string;
+  pct: string;
+  day_change_base: string;
+}
+
+export interface GroupExposure {
+  groups: GroupExposureItem[];
+  total_base: string;
+  unpriced: string[];
+  as_of: string;
+}
+
+export interface TrendPoint {
+  as_of: string;
+  value_base: string;
+  pct: string;
+}
+
+export interface TrendSeries {
+  group_id: number | null;
+  name: string;
+  color: string;
+  points: TrendPoint[];
+}
+
+export interface GroupTrend {
+  series: TrendSeries[];
+  as_of: string;
+}
+
+export type TrendRange = "30d" | "90d" | "1y";
