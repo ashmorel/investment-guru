@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI
 
 from app.services.guru.llm.base import LLMError, LLMProvider, TextStream, Usage
+from app.services.guru.llm.scrub import scrub_secrets
 
 
 def _to_openai_messages(system: str, messages: list[dict]) -> list[dict]:
@@ -36,15 +37,18 @@ class OpenAIProvider(LLMProvider):
                 messages=_to_openai_messages(system, messages),
                 response_format=schema,
             )
+            msg = resp.choices[0].message
+            if getattr(msg, "refusal", None):
+                raise LLMError(f"model refused: {msg.refusal}")
+            if msg.parsed is None:
+                raise LLMError("model returned no parseable output")
+            u = resp.usage
+            usage = Usage(u.prompt_tokens, u.completion_tokens) if u is not None else Usage(0, 0)
+            return msg.parsed, usage
+        except LLMError:
+            raise
         except Exception as exc:  # SDK/network/validation errors → uniform LLMError
-            raise LLMError(str(exc)) from exc
-        msg = resp.choices[0].message
-        if getattr(msg, "refusal", None):
-            raise LLMError(f"model refused: {msg.refusal}")
-        if msg.parsed is None:
-            raise LLMError("model returned no parseable output")
-        u = resp.usage
-        return msg.parsed, Usage(u.prompt_tokens, u.completion_tokens)
+            raise LLMError(scrub_secrets(str(exc))) from None
 
     def stream_text(self, *, system, messages, model, max_tokens) -> TextStream:
         client, translate = self._client, _to_openai_messages
@@ -68,7 +72,7 @@ class OpenAIProvider(LLMProvider):
             except LLMError:
                 raise
             except Exception as exc:
-                raise LLMError(str(exc)) from exc
+                raise LLMError(scrub_secrets(str(exc))) from None
 
         stream = TextStream(gen())
         stream_holder.append(stream)

@@ -1,4 +1,3 @@
-import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -11,6 +10,7 @@ from app.models import LlmConfig
 from app.services.guru.config import load_active_config
 from app.services.guru.llm.base import Usage  # noqa: F401 (documents return shape)
 from app.services.guru.llm.factory import build_provider
+from app.services.guru.llm.scrub import scrub_secrets
 from app.services.guru.service import invalidate_guru_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -70,23 +70,12 @@ def _dec(v):
     return None if v in (None, "") else Decimal(v)
 
 
-# Redact common API-key shapes from provider error text before it is returned.
-# Google's genai puts the FULL key in a ?key=... query param; OpenAI/Anthropic
-# keys start with sk-; Google keys start with AIza.
-_KEY_PATTERNS = [
-    re.compile(r"key=[^\s&\"']+"),          # ?key=<value> query params (Google)
-    re.compile(r"sk-[A-Za-z0-9_\-]+"),      # OpenAI / Anthropic secret keys
-    re.compile(r"AIza[A-Za-z0-9_\-]+"),     # Google API keys
-]
-
-
 def _scrub(text: str, api_key: str) -> str:
     """Strip the submitted key + common key patterns from provider error text,
     then truncate. The api_key must never reach the client."""
     if api_key:
         text = text.replace(api_key, "***")
-    for pat in _KEY_PATTERNS:
-        text = pat.sub("***", text)
+    text = scrub_secrets(text)
     return text[:200]
 
 

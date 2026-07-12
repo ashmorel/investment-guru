@@ -1,6 +1,7 @@
 from anthropic import AsyncAnthropic
 
 from app.services.guru.llm.base import LLMError, LLMProvider, TextStream, Usage
+from app.services.guru.llm.scrub import scrub_secrets
 
 
 class AnthropicProvider(LLMProvider):
@@ -14,7 +15,7 @@ class AnthropicProvider(LLMProvider):
                 messages=messages, output_format=schema,
             )
         except Exception as exc:  # SDK/network/validation errors → uniform LLMError
-            raise LLMError(str(exc)) from exc
+            raise LLMError(scrub_secrets(str(exc))) from None
         if resp.parsed_output is None:
             raise LLMError("model returned no parseable output")
         usage = Usage(resp.usage.input_tokens, resp.usage.output_tokens)
@@ -37,7 +38,7 @@ class AnthropicProvider(LLMProvider):
             except LLMError:
                 raise
             except Exception as exc:
-                raise LLMError(str(exc)) from exc
+                raise LLMError(scrub_secrets(str(exc))) from None
 
         stream = TextStream(gen())
         stream_holder.append(stream)

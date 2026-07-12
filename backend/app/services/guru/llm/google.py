@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 
 from app.services.guru.llm.base import LLMError, LLMProvider, TextStream, Usage
+from app.services.guru.llm.scrub import scrub_secrets
 
 # Anthropic/OpenAI-style roles → Gemini roles. Gemini only knows "user"/"model".
 _ROLE_MAP = {"user": "user", "assistant": "model", "model": "model"}
@@ -69,7 +70,7 @@ class GoogleProvider(LLMProvider):
         except LLMError:
             raise
         except Exception as exc:  # SDK/network/validation errors → uniform LLMError
-            raise LLMError(str(exc)) from exc
+            raise LLMError(scrub_secrets(str(exc))) from None
 
     def stream_text(self, *, system, messages, model, max_tokens) -> TextStream:
         client = self._client
@@ -94,7 +95,7 @@ class GoogleProvider(LLMProvider):
             except LLMError:
                 raise
             except Exception as exc:
-                raise LLMError(str(exc)) from exc
+                raise LLMError(scrub_secrets(str(exc))) from None
 
         stream = TextStream(gen())
         stream_holder.append(stream)

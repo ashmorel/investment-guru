@@ -87,3 +87,23 @@ async def test_wraps_errors(monkeypatch):
     with pytest.raises(LLMError):
         await prov.generate_structured(system="s", messages=[{"role": "user", "content": "x"}],
                                        schema=_Schema, model="gemini-2.5-pro", max_tokens=100)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_structured_scrubs_key_and_breaks_chain(monkeypatch):
+    """A provider error whose message embeds a key (e.g. genai's ?key=<full key>
+    query param) must never leak the key, and the raw SDK exception must not
+    remain in __cause__ (traceback-safe)."""
+    prov = GoogleProvider("g-key")
+
+    async def boom(**kwargs):
+        raise RuntimeError("auth failed key=AIzaSECRET123 sk-supersecret456")
+    monkeypatch.setattr(prov._client.aio.models, "generate_content", boom)
+    with pytest.raises(LLMError) as excinfo:
+        await prov.generate_structured(system="s", messages=[{"role": "user", "content": "x"}],
+                                       schema=_Schema, model="gemini-2.5-pro", max_tokens=100)
+    err = excinfo.value
+    assert "AIzaSECRET123" not in str(err)
+    assert "sk-supersecret456" not in str(err)
+    assert err.__cause__ is None
+    assert err.__suppress_context__ is True
