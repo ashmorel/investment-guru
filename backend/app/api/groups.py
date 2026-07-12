@@ -174,5 +174,6 @@ async def exposure(db: SessionDep, user: CurrentUser,
         if pf is None or pf.user_id != user.id:
             raise HTTPException(status_code=404, detail="portfolio_not_found")
     result = await compute_group_exposure(db, user, quotes, fx, portfolio_id)
+    await db.commit()  # persist any FxRate rows cached by fx.get_rate during valuation
     result["as_of"] = datetime.now(UTC).isoformat()
     return result

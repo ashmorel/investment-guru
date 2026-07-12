@@ -5,13 +5,30 @@ import pytest
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def _hold(auth_client, symbol, qty, make_instrument):
+async def _hold(auth_client, symbol, qty, make_instrument, base_currency="GBP"):
     await make_instrument(symbol)
     pid = (await auth_client.post("/api/portfolios",
-           json={"name": symbol, "kind": "real", "base_currency": "GBP"})).json()["id"]
+           json={"name": symbol, "kind": "real", "base_currency": base_currency})).json()["id"]
     await auth_client.post(f"/api/portfolios/{pid}/positions",
                            json={"symbol": symbol, "quantity": str(qty)})
     return pid
+
+
+def _stub_fx(monkeypatch, rates: dict):
+    """Stub FxService.get_rate: base_currency -> rate into GBP (or a currency
+    whose value is an Exception instance to simulate an FX-provider failure)."""
+    from app.services.valuation import FxService
+
+    async def fake(self, db, base, quote):
+        assert quote == "GBP"
+        r = rates.get(base)
+        if isinstance(r, Exception):
+            raise r
+        if r is None:
+            raise LookupError(base)
+        return r
+
+    monkeypatch.setattr(FxService, "get_rate", fake)
 
 
 def _stub_valuation(monkeypatch, prices: dict):
@@ -59,3 +76,49 @@ async def test_exposure_unpriced_degrades(auth_client, make_instrument, monkeypa
     _stub_valuation(monkeypatch, {"AAPL": None})
     body = (await auth_client.get("/api/groups/exposure")).json()
     assert body["total_base"] == "0.00" and "AAPL" in body["unpriced"]
+
+
+async def test_exposure_converts_foreign_portfolio_to_gbp(
+        auth_client, make_instrument, monkeypatch):
+    # GBP portfolio (rate=1, no fx needed) + USD portfolio (USD->GBP = 0.8).
+    await _hold(auth_client, "AAPL", 1, make_instrument, base_currency="GBP")
+    await _hold(auth_client, "XOM", 1, make_instrument, base_currency="USD")
+    _stub_valuation(monkeypatch, {"AAPL": Decimal("70"), "XOM": Decimal("30")})
+    _stub_fx(monkeypatch, {"USD": Decimal("0.8")})
+    g = (await auth_client.post("/api/groups", json={"name": "Energy"})).json()
+    await auth_client.put("/api/groups/assign", json={"symbol": "XOM", "group_id": g["id"]})
+
+    body = (await auth_client.get("/api/groups/exposure")).json()
+    by = {(x["group_id"] or "ungrouped"): x for x in body["groups"]}
+    # XOM: 30 USD * 0.8 = 24.00 GBP; total: 70 (GBP) + 24 = 94.00 GBP.
+    assert by[g["id"]]["value_base"] == "24.00"
+    assert body["total_base"] == "94.00"
+    assert by["ungrouped"]["value_base"] == "70.00"
+
+
+async def test_exposure_fx_failure_degrades_portfolio(auth_client, make_instrument, monkeypatch):
+    # USD portfolio whose FX rate can't be resolved -> its priced holdings degrade.
+    await _hold(auth_client, "XOM", 1, make_instrument, base_currency="USD")
+    _stub_valuation(monkeypatch, {"XOM": Decimal("30")})
+    _stub_fx(monkeypatch, {"USD": LookupError("no fx")})
+    body = (await auth_client.get("/api/groups/exposure")).json()
+    assert body["total_base"] == "0.00"
+    assert "XOM" in body["unpriced"]
+    assert body["groups"] == []
+
+
+async def test_exposure_portfolio_id_not_owned_404(auth_client, db_session):
+    from app.core.security import hash_password
+    from app.models import Portfolio
+    from app.models.user import User
+
+    other = User(email="other@test.dev", password_hash=hash_password("pw123456"))
+    db_session.add(other)
+    await db_session.commit()
+    pf = Portfolio(user_id=other.id, name="Theirs", kind="real", base_currency="GBP")
+    db_session.add(pf)
+    await db_session.commit()
+
+    resp = await auth_client.get(f"/api/groups/exposure?portfolio_id={pf.id}")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "portfolio_not_found"
