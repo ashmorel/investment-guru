@@ -193,3 +193,31 @@ export interface OrsoFundOut {
   archived: boolean;
   currency: string;
 }
+
+// --- Admin LLM config (Task 8) ----------------------------------------------
+// Mirrors backend/app/api/admin.py LlmConfigOut/LlmConfigIn. The API key is
+// write-only: the GET response never includes it, only whether one is set.
+
+export interface LlmConfig {
+  provider: string;
+  advice_model: string;
+  scan_model: string;
+  advice_input_price: string | null;
+  advice_output_price: string | null;
+  scan_input_price: string | null;
+  scan_output_price: string | null;
+  key_set: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface LlmConfigInput {
+  provider: string;
+  advice_model: string;
+  scan_model: string;
+  api_key?: string;
+  advice_input_price?: string | null;
+  advice_output_price?: string | null;
+  scan_input_price?: string | null;
+  scan_output_price?: string | null;
+}

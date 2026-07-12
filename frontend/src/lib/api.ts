@@ -1,4 +1,11 @@
-import type { AllocationDraft, ApplyRequest, ApplyResult, OrsoFundOut } from "./types";
+import type {
+  AllocationDraft,
+  ApplyRequest,
+  ApplyResult,
+  LlmConfig,
+  LlmConfigInput,
+  OrsoFundOut,
+} from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -76,6 +83,53 @@ export function setDisplayCurrency(currency: string): Promise<{ currency: string
     method: "PUT",
     body: JSON.stringify({ currency }),
   });
+}
+
+// --- Admin LLM config (Task 8) -----------------------------------------------
+
+export function getLlmConfig(): Promise<LlmConfig> {
+  return apiFetch<LlmConfig>("/api/admin/llm-config");
+}
+
+export function putLlmConfig(body: LlmConfigInput): Promise<LlmConfig> {
+  return apiFetch<LlmConfig>("/api/admin/llm-config", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function testLlmConfig(body: LlmConfigInput): Promise<{ ok: boolean; detail: string }> {
+  return apiFetch<{ ok: boolean; detail: string }>("/api/admin/llm-config/test", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// /llm-config PUT raises 422 for an unknown provider (plain string detail) or
+// an unparsable budget price (pydantic validation-error array via
+// field_validator) — surface both as a readable message instead of raw JSON.
+export function llmConfigErrorMessage(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 422) return null;
+  try {
+    const body = JSON.parse(error.message) as { detail?: unknown };
+    if (typeof body.detail === "string") {
+      return body.detail === "unknown_provider"
+        ? "Unknown provider — choose Anthropic, OpenAI, or Google."
+        : body.detail;
+    }
+    if (Array.isArray(body.detail)) {
+      const msgs = body.detail
+        .map((d) => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : null))
+        .filter((m): m is string => !!m);
+      if (msgs.some((m) => m.includes("invalid_price"))) {
+        return "One of the budget prices isn't a valid number.";
+      }
+      if (msgs.length) return msgs.join("; ");
+    }
+  } catch {
+    /* fall through to the generic message below */
+  }
+  return "Invalid configuration — check the values and try again.";
 }
 
 // Ingest-specific error mapping: the ingest endpoints raise 413 (upload too
