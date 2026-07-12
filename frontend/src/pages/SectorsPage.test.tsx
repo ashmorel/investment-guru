@@ -20,9 +20,10 @@ const PORTFOLIOS = [
   { id: 1, name: "Growth", kind: "real", base_currency: "GBP", position_count: 2 },
 ];
 
-const POSITIONS_P1 = [
-  { id: 1, symbol: "AAPL", name: "Apple", market: "US", currency: "USD", quantity: "10", avg_cost: "100", notes: null },
-  { id: 2, symbol: "XOM", name: "Exxon Mobil", market: "US", currency: "USD", quantity: "5", avg_cost: "80", notes: null },
+// AAPL is already assigned to the Tech group (id 1); XOM is Ungrouped.
+const HOLDINGS = [
+  { symbol: "AAPL", name: "Apple", group_id: 1, group_name: "Tech" },
+  { symbol: "XOM", name: "Exxon Mobil", group_id: null, group_name: null },
 ];
 
 const EXPOSURE = {
@@ -50,6 +51,8 @@ const TREND = {
 function mockApi(overrides?: {
   groups?: unknown[];
   groupsAfterSeed?: unknown[];
+  holdings?: unknown[];
+  holdingsAfterAssign?: unknown[];
   exposure?: unknown;
   onSeedPost?: () => Response | Promise<Response>;
   onAssignPut?: (body: unknown) => void;
@@ -58,6 +61,7 @@ function mockApi(overrides?: {
   onDelete?: (id: string) => void;
 }) {
   let seeded = false;
+  let assigned = false;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -68,8 +72,13 @@ function mockApi(overrides?: {
     }
     if (url.includes("/api/groups/assign") && method === "PUT") {
       const body = JSON.parse(String(init?.body));
+      assigned = true;
       overrides?.onAssignPut?.(body);
       return jsonResponse({ symbol: body.symbol, group_id: body.group_id });
+    }
+    if (url.includes("/api/groups/holdings") && method === "GET") {
+      if (assigned && overrides?.holdingsAfterAssign) return jsonResponse(overrides.holdingsAfterAssign);
+      return jsonResponse(overrides?.holdings ?? HOLDINGS);
     }
     if (url.includes("/api/groups/exposure")) {
       return jsonResponse(overrides?.exposure ?? EXPOSURE);
@@ -97,7 +106,6 @@ function mockApi(overrides?: {
       if (seeded && overrides?.groupsAfterSeed) return jsonResponse(overrides.groupsAfterSeed);
       return jsonResponse(overrides?.groups ?? [TECH_GROUP]);
     }
-    if (url.includes("/api/portfolios/1/positions")) return jsonResponse(POSITIONS_P1);
     if (url.endsWith("/api/portfolios")) return jsonResponse(PORTFOLIOS);
     throw new Error(`Unexpected fetch: ${url} ${method}`);
   });
@@ -141,17 +149,39 @@ describe("SectorsPage", () => {
     expect(await screen.findByText("Energy", { selector: "span.flex-1" })).toBeInTheDocument();
   });
 
-  it("changing a holding's group select calls assignGroup with the symbol and group id", async () => {
+  it("preselects each holding's current group from getGroupHoldings", async () => {
+    mockApi();
+    renderPage();
+
+    // AAPL is assigned to Tech (id 1); XOM is Ungrouped ("").
+    const aaplSelect = (await screen.findByLabelText(/AAPL group/i)) as HTMLSelectElement;
+    expect(aaplSelect.value).toBe("1");
+    const xomSelect = screen.getByLabelText(/XOM group/i) as HTMLSelectElement;
+    expect(xomSelect.value).toBe("");
+  });
+
+  it("changing a holding's group select calls assignGroup and refetches the holdings list", async () => {
     let posted: unknown = null;
-    mockApi({ onAssignPut: (body) => (posted = body) });
+    mockApi({
+      onAssignPut: (body) => (posted = body),
+      holdingsAfterAssign: [
+        { symbol: "AAPL", name: "Apple", group_id: 1, group_name: "Tech" },
+        { symbol: "XOM", name: "Exxon Mobil", group_id: 1, group_name: "Tech" },
+      ],
+    });
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByText("AAPL");
-    const select = screen.getByLabelText(/AAPL group/i);
-    await user.selectOptions(select, "Tech");
+    // XOM starts Ungrouped — move it into Tech.
+    const xomSelect = (await screen.findByLabelText(/XOM group/i)) as HTMLSelectElement;
+    expect(xomSelect.value).toBe("");
+    await user.selectOptions(xomSelect, "Tech");
 
-    await waitFor(() => expect(posted).toEqual({ symbol: "AAPL", group_id: 1 }));
+    await waitFor(() => expect(posted).toEqual({ symbol: "XOM", group_id: 1 }));
+    // The refetched holdings list reflects the new assignment.
+    await waitFor(() =>
+      expect((screen.getByLabelText(/XOM group/i) as HTMLSelectElement).value).toBe("1"),
+    );
   });
 
   it("clearing a holding's group select assigns it back to Ungrouped (null)", async () => {
@@ -160,10 +190,9 @@ describe("SectorsPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByText("AAPL");
-    const select = screen.getByLabelText(/AAPL group/i);
-    await user.selectOptions(select, "Tech");
-    await waitFor(() => expect(posted).toEqual({ symbol: "AAPL", group_id: 1 }));
+    // AAPL starts in Tech — clear it back to Ungrouped.
+    const select = (await screen.findByLabelText(/AAPL group/i)) as HTMLSelectElement;
+    expect(select.value).toBe("1");
     await user.selectOptions(select, "Ungrouped");
     await waitFor(() => expect(posted).toEqual({ symbol: "AAPL", group_id: null }));
   });

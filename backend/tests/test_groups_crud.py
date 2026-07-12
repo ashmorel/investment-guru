@@ -84,6 +84,39 @@ async def test_seed_from_sectors_idempotent_nondestructive(auth_client, make_ins
     assert groups["Technology"]["holding_count"] == 0
 
 
+async def test_holdings_lists_held_instruments_with_current_group(auth_client, make_instrument):
+    await _hold(auth_client, "AAPL", make_instrument)
+    await _hold(auth_client, "XOM", make_instrument)
+    g = (await auth_client.post("/api/groups", json={"name": "Tech", "color": "#4F46E5"})).json()
+    await auth_client.put("/api/groups/assign", json={"symbol": "AAPL", "group_id": g["id"]})
+
+    holdings = (await auth_client.get("/api/groups/holdings")).json()
+    by_symbol = {h["symbol"]: h for h in holdings}
+    assert set(by_symbol) == {"AAPL", "XOM"}
+    # ordered by symbol
+    assert [h["symbol"] for h in holdings] == ["AAPL", "XOM"]
+    assert by_symbol["AAPL"]["group_id"] == g["id"]
+    assert by_symbol["AAPL"]["group_name"] == "Tech"
+    assert by_symbol["AAPL"]["name"]  # instrument name is populated
+    assert by_symbol["XOM"]["group_id"] is None
+    assert by_symbol["XOM"]["group_name"] is None
+
+
+async def test_holdings_are_user_scoped(auth_client, client, db_session, make_instrument):
+    # User A holds AAPL.
+    await _hold(auth_client, "AAPL", make_instrument)
+    # User B logs in and holds XOM only.
+    from app.core.security import hash_password
+    from app.models.user import User
+    db_session.add(User(email="bhold@test.dev", password_hash=hash_password("pw123456")))
+    await db_session.commit()
+    await client.post("/api/auth/login", json={"email": "bhold@test.dev", "password": "pw123456"})
+    await _hold(client, "XOM", make_instrument)
+
+    b_holdings = (await client.get("/api/groups/holdings")).json()
+    assert [h["symbol"] for h in b_holdings] == ["XOM"]  # never sees User A's AAPL
+
+
 async def test_groups_are_user_scoped(auth_client, client, db_session, make_instrument):
     g = (await auth_client.post("/api/groups", json={"name": "Mine"})).json()
     from app.core.security import hash_password

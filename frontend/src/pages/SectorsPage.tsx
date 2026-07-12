@@ -8,12 +8,13 @@ import {
   createGroup,
   deleteGroup,
   getGroupExposure,
+  getGroupHoldings,
   getGroups,
   getGroupTrend,
   seedGroups,
   updateGroup,
 } from "../lib/api";
-import type { HoldingGroup, Portfolio, Position, TrendRange } from "../lib/types";
+import type { HoldingGroup, Portfolio, TrendRange } from "../lib/types";
 
 // Groups created without an explicit color (e.g. via seed-from-sectors) come
 // back from the API with color: "" — fall back to a small default palette by
@@ -24,9 +25,13 @@ import type { HoldingGroup, Portfolio, Position, TrendRange } from "../lib/types
 const DEFAULT_PALETTE = ["#4f46e5", "#0d9488", "#d97706", "#7c3aed", "#db2777", "#0891b2"];
 const UNGROUPED_COLOR = "#94a3b8";
 
-function resolveColor(groupId: number | null, color: string, index: number): string {
+// Fallback is deterministic per group identity (not list position), so a
+// colorless (e.g. seeded) group renders the SAME swatch in the Manage list,
+// the Exposure bars, and the Trend chart — which are each ordered differently.
+// The null/Ungrouped bucket is always muted grey.
+function resolveColor(groupId: number | null, color: string): string {
   if (groupId === null) return UNGROUPED_COLOR;
-  return color || DEFAULT_PALETTE[index % DEFAULT_PALETTE.length];
+  return color || DEFAULT_PALETTE[groupId % DEFAULT_PALETTE.length];
 }
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -35,13 +40,11 @@ const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 function GroupRow({
   group,
-  index,
   onRename,
   onRecolor,
   onDelete,
 }: {
   group: HoldingGroup;
-  index: number;
   onRename: (id: number, name: string) => void;
   onRecolor: (id: number, color: string) => void;
   onDelete: (id: number) => void;
@@ -54,7 +57,7 @@ function GroupRow({
       <span
         aria-hidden="true"
         className="h-3 w-3 shrink-0 rounded-full"
-        style={{ backgroundColor: resolveColor(group.id, group.color, index) }}
+        style={{ backgroundColor: resolveColor(group.id, group.color) }}
       />
       {editing ? (
         <form
@@ -94,7 +97,7 @@ function GroupRow({
           <input
             type="color"
             aria-label={`${group.name} color`}
-            value={HEX_COLOR.test(group.color) ? group.color : resolveColor(group.id, group.color, index)}
+            value={HEX_COLOR.test(group.color) ? group.color : resolveColor(group.id, group.color)}
             onChange={(e) => onRecolor(group.id, e.target.value)}
             className="h-6 w-6 rounded border border-border"
           />
@@ -120,11 +123,6 @@ function GroupRow({
 
 // --- Page ---------------------------------------------------------------------
 
-interface Holding {
-  symbol: string;
-  name: string;
-}
-
 export default function SectorsPage() {
   const qc = useQueryClient();
   const [portfolioFilter, setPortfolioFilter] = useState("");
@@ -132,7 +130,6 @@ export default function SectorsPage() {
   const [metric, setMetric] = useState<"value" | "pct">("value");
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupColor, setNewGroupColor] = useState("#4f46e5");
-  const [localAssignments, setLocalAssignments] = useState<Record<string, string>>({});
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: getGroups });
 
@@ -143,20 +140,8 @@ export default function SectorsPage() {
   const realPortfolios = (portfoliosQuery.data ?? []).filter((p) => p.kind === "real");
 
   const holdingsQuery = useQuery({
-    queryKey: ["holdings", realPortfolios.map((p) => p.id).join(",")],
-    queryFn: async (): Promise<Holding[]> => {
-      const lists = await Promise.all(
-        realPortfolios.map((p) => apiFetch<Position[]>(`/api/portfolios/${p.id}/positions`)),
-      );
-      const bySymbol = new Map<string, Holding>();
-      for (const positions of lists) {
-        for (const pos of positions) {
-          if (!bySymbol.has(pos.symbol)) bySymbol.set(pos.symbol, { symbol: pos.symbol, name: pos.name });
-        }
-      }
-      return Array.from(bySymbol.values()).sort((a, b) => a.symbol.localeCompare(b.symbol));
-    },
-    enabled: portfoliosQuery.isSuccess,
+    queryKey: ["group-holdings"],
+    queryFn: getGroupHoldings,
   });
 
   const exposureQuery = useQuery({
@@ -172,6 +157,7 @@ export default function SectorsPage() {
   const invalidateGroupsAndExposure = () => {
     qc.invalidateQueries({ queryKey: ["groups"] });
     qc.invalidateQueries({ queryKey: ["group-exposure"] });
+    qc.invalidateQueries({ queryKey: ["group-holdings"] });
   };
 
   const createMutation = useMutation({
@@ -243,11 +229,10 @@ export default function SectorsPage() {
               </p>
             ) : (
               <ul className="mt-2 divide-y divide-border">
-                {groups.map((g, i) => (
+                {groups.map((g) => (
                   <GroupRow
                     key={g.id}
                     group={g}
-                    index={i}
                     onRename={(id, name) => renameMutation.mutate({ id, name })}
                     onRecolor={(id, color) => recolorMutation.mutate({ id, color })}
                     onDelete={(id) => deleteMutation.mutate(id)}
@@ -311,10 +296,9 @@ export default function SectorsPage() {
                     </span>
                     <select
                       aria-label={`${h.symbol} group`}
-                      value={localAssignments[h.symbol] ?? ""}
+                      value={h.group_id ?? ""}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setLocalAssignments((prev) => ({ ...prev, [h.symbol]: val }));
                         assignMutation.mutate({
                           symbol: h.symbol,
                           group_id: val === "" ? null : Number(val),
@@ -365,13 +349,13 @@ export default function SectorsPage() {
         )}
         {exposureQuery.data && exposureQuery.data.groups.length > 0 && (
           <div className="mt-4 space-y-3">
-            {exposureQuery.data.groups.map((item, i) => (
+            {exposureQuery.data.groups.map((item) => (
               <div key={item.group_id ?? "ungrouped"}>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span className="text-text">{item.name}</span>
                   <span className="text-muted">
                     <Money value={item.value_base} ccy="GBP" /> · {item.pct}%{" · "}
-                    <Money value={item.day_change_base} signed />
+                    <Money value={item.day_change_base} ccy="GBP" signed />
                   </span>
                 </div>
                 <div className="mt-1 h-2 rounded-full bg-bg">
@@ -379,7 +363,7 @@ export default function SectorsPage() {
                     className="h-2 rounded-full"
                     style={{
                       width: `${Math.min(100, Math.max(0, Number(item.pct)))}%`,
-                      backgroundColor: resolveColor(item.group_id, item.color, i),
+                      backgroundColor: resolveColor(item.group_id, item.color),
                     }}
                   />
                 </div>
@@ -445,9 +429,9 @@ export default function SectorsPage() {
         {trendQuery.data && (
           <div className="mt-4">
             <TrendChart
-              series={trendQuery.data.series.map((s, i) => ({
+              series={trendQuery.data.series.map((s) => ({
                 ...s,
-                color: resolveColor(s.group_id, s.color, i),
+                color: resolveColor(s.group_id, s.color),
               }))}
               metric={metric}
             />

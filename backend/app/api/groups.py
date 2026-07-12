@@ -45,6 +45,13 @@ class GroupOut(BaseModel):
     holding_count: int
 
 
+class HoldingOut(BaseModel):
+    symbol: str
+    name: str
+    group_id: int | None
+    group_name: str | None
+
+
 class GroupIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     color: str = Field(default="", max_length=16)
@@ -73,6 +80,26 @@ async def list_groups(db: SessionDep, user: CurrentUser):
     counts = await _counts(db, user.id)
     return [GroupOut(id=g.id, name=g.name, color=g.color, sort_order=g.sort_order,
                      holding_count=counts.get(g.id, 0)) for g in groups]
+
+
+@router.get("/holdings", response_model=list[HoldingOut])
+async def list_holdings(db: SessionDep, user: CurrentUser):
+    """The user's real held instruments with their current group (if any).
+    Ungrouped holdings report group_id/group_name = None. User-scoped."""
+    insts = await user_held_instruments(db, user.id)
+    groups = {g.id: g for g in (await db.execute(
+        select(HoldingGroup).where(HoldingGroup.user_id == user.id))).scalars().all()}
+    inst_to_group = {iid: gid for gid, iid in (await db.execute(
+        select(GroupAssignment.group_id, GroupAssignment.instrument_id)
+        .where(GroupAssignment.user_id == user.id))).all()}
+    out = []
+    for inst in sorted(insts, key=lambda i: i.symbol):
+        gid = inst_to_group.get(inst.id)
+        group = groups.get(gid) if gid is not None else None
+        out.append(HoldingOut(symbol=inst.symbol, name=inst.name,
+                              group_id=group.id if group else None,
+                              group_name=group.name if group else None))
+    return out
 
 
 @router.post("", response_model=GroupOut, status_code=201)

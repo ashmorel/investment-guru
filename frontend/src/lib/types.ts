@@ -292,6 +292,13 @@ export interface AssignResult {
   group_id: number | null;
 }
 
+export interface GroupHolding {
+  symbol: string;
+  name: string;
+  group_id: number | null;
+  group_name: string | null;
+}
+
 export interface GroupExposureItem {
   group_id: number | null;
   name: string;

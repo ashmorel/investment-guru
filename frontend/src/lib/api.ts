@@ -4,6 +4,7 @@ import type {
   ApplyResult,
   AssignResult,
   GroupExposure,
+  GroupHolding,
   GroupTrend,
   GuruReport,
   HoldingGroup,
@@ -224,6 +225,10 @@ export function newsSummaryErrorMessage(error: unknown): string | null {
 
 export function getGroups(): Promise<HoldingGroup[]> {
   return apiFetch<HoldingGroup[]>("/api/groups");
+}
+
+export function getGroupHoldings(): Promise<GroupHolding[]> {
+  return apiFetch<GroupHolding[]>("/api/groups/holdings");
 }
 
 export function createGroup(body: { name: string; color?: string }): Promise<HoldingGroup> {
