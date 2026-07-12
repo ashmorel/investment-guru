@@ -201,6 +201,51 @@ class GuruService:
             await db.commit()
             return report
 
+    async def generate_rotation(self, db: AsyncSession, user: User) -> GuruReport:
+        from app.services.groups.rotation_context import build_rotation_context
+
+        provider = self._require_provider()
+        lock = self._lock("rotation")
+        if lock.locked():
+            raise GenerationInProgress("rotation")
+        async with lock:
+            await check_budget(db, user.id)
+            ctx = await build_rotation_context(db, user, self.quotes, self.fx)
+            group_names = {g["name"] for g in ctx["groups"]}
+            messages = [{"role": "user", "content":
+                         _ROTATION_INSTRUCTION + "\n\n" + json.dumps(ctx)}]
+            payload, usage = await provider.generate_structured(
+                system=PERSONA_V1, messages=messages, schema=RotationAdvicePayload,
+                model=self.advice_model, max_tokens=4096)
+            invalid = _rotation_invalid_groups(payload, group_names)
+            if invalid:
+                messages += [
+                    {"role": "assistant", "content": payload.model_dump_json()},
+                    {"role": "user", "content":
+                     f"These group names are not valid: {sorted(invalid)}. Allowed groups "
+                     f"are: {sorted(group_names)}. Return the complete rotation advice again, "
+                     "using only these group names."},
+                ]
+                first_usage = usage
+                payload, usage = await provider.generate_structured(
+                    system=PERSONA_V1, messages=messages, schema=RotationAdvicePayload,
+                    model=self.advice_model, max_tokens=4096)
+                usage = Usage(input_tokens=first_usage.input_tokens + usage.input_tokens,
+                              output_tokens=first_usage.output_tokens + usage.output_tokens)
+                invalid = _rotation_invalid_groups(payload, group_names)
+                if invalid:
+                    raise LLMError(f"rotation advice referenced invalid groups: {sorted(invalid)}")
+            report = GuruReport(user_id=user.id, kind="rotation", portfolio_id=None,
+                                payload=payload.model_dump(), model=self.advice_model,
+                                created_at=_now())
+            db.add(report)
+            await db.flush()
+            await usage_mod.record_usage(db, user_id=user.id, mode="rotation",
+                                         model=self.advice_model, usage=usage,
+                                         report_id=report.id, price=self.advice_price)
+            await db.commit()
+            return report
+
     async def generate_news_summary(self, db: AsyncSession, user: User,
                                     instrument, headlines: list) -> GuruReport:
         provider = self._require_provider()
