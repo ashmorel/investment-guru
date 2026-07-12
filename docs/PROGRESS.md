@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-12 (dashboard/stock-news UX complete, migration 0011)._
+_Last updated: 2026-07-12 (user-defined sector/theme grouping complete, migration 0012)._
 
 ## Phase 1 — portfolio core: COMPLETE
 
@@ -341,6 +341,40 @@ collapsible list on `PortfolioDetailPage`. `npm run check` green (108 tests incl
 Backend **343** tests; each of the 3 backend tasks reviewed with fix loops. Live: 0011 clean, `/api/health`
 200, `GET /api/news` 401 (mounted). Cross-user scoped (own instruments only); the old `news_recent`
 attention signal was kept as a nudge.
+
+## Enhancement Project 4 — user-defined sector/theme grouping: COMPLETE (2026-07-12, migration 0012)
+
+Spec `.../specs/2026-07-12-sector-grouping-design.md`, plan `.../plans/2026-07-12-sector-grouping.md`
+(7 tasks, subagent-driven TDD). Live in prod (0011→0012 clean; endpoints 401 unauth). Final Opus
+whole-branch review: **READY TO MERGE**, migration go/no-go **GO**.
+
+### Data model (0012, additive — three new tables)
+- `HoldingGroup(user_id, name String(64), color String(16), sort_order)` — unique `(user_id, name)`.
+- `GroupAssignment(user_id, instrument_id, group_id)` — **one group per instrument** (unique
+  `(user_id, instrument_id)`), `group_id` FK `ON DELETE CASCADE` (deleting a group → its holdings fall to Ungrouped).
+- `GroupSnapshot(user_id, group_id: int|None, as_of date, value_base EncryptedDecimal)` — unique
+  `(user_id, group_id, as_of)` with **NULLS NOT DISTINCT** (the null Ungrouped bucket upserts cleanly).
+  Amounts encrypted at rest; percentages derived at read (decrypt + aggregate in Python).
+
+### API (`app/api/groups.py`, all auth + user-scoped)
+- CRUD: `GET/POST /api/groups`, `PATCH/DELETE /api/groups/{id}` (409 dup name, 404 not-owned).
+- `PUT /api/groups/assign` (`symbol`, `group_id: int|null`) — upsert, 422 if not held, null clears to Ungrouped.
+- `POST /api/groups/seed-from-sectors` — idempotent + non-destructive; auto Yahoo `sector`→group (null→"Unclassified"), assigns only currently-unassigned held instruments.
+- `GET /api/groups/holdings` — each real held instrument + its current `group_id`/`group_name` (powers the manage-list preselect; deduped across portfolios).
+- `GET /api/groups/exposure?portfolio_id=` — live valuation aggregated per group **in a single GBP base**
+  (`app/services/groups/exposure.py`: each portfolio converted via `fx.get_rate(…,"GBP")`; a quote/FX failure
+  degrades that holding to `unpriced`, **never 500**); returns `{groups[{group_id,name,color,value_base,pct,day_change_base}], total_base, unpriced, as_of}`. Opportunistically upserts today's snapshot (best-effort — a concurrent unique-constraint race rolls back and still returns 200).
+- `GET /api/groups/trend?range=30d|90d|1y` — forward-only history from the snapshots (pct derived per date).
+
+### Snapshot job (`app/services/groups/snapshot.py`)
+`run_group_snapshot_job` on the scheduler (`digest_hour:30`, single replica, per-user failure-isolated, idempotent delete-then-insert); startup `snapshot_catch_up` always runs the idempotent job (wrapped so a failure never breaks boot). History accrues forward from launch (no backfill).
+
+### Frontend
+`SectorsPage.tsx` at `/sectors` (nav after Portfolios): manage (groups CRUD + seed + per-holding `<select>` preselected to the current group), exposure bars (value/%/day-change GBP, portfolio filter, unpriced note), and inline-SVG `TrendChart.tsx` (**no chart lib** — Value/Weight + 30d/90d/1y toggles, "history is building" empty state). Group colour is `group_id`-keyed so a colourless seeded group renders the same swatch everywhere.
+
+### Verified
+Backend group suite **15** tests (full suite 356+); frontend **126** (incl. vitest-axe). Live: 0011→0012
+migration clean in Railway logs, `/api/groups` · `/exposure` · `/holdings` all 401 (mounted), `/sectors` 200.
 
 ## How to run locally
 ```bash
