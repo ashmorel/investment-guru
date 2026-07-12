@@ -1,3 +1,4 @@
+from app.models.groups import GroupAssignment, GroupSnapshot, HoldingGroup
 from app.models.guru import (
     ChatMessage,
     ChatThread,
@@ -17,7 +18,10 @@ __all__ = [
     "ChatMessage",
     "ChatThread",
     "FxRate",
+    "GroupAssignment",
+    "GroupSnapshot",
     "GuruReport",
+    "HoldingGroup",
     "Instrument",
     "InstrumentFundamentals",
     "InvestorProfile",
