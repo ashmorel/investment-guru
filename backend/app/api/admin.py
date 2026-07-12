@@ -1,7 +1,9 @@
+import re
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 from app.api.deps import AdminUser, SessionDep
@@ -44,6 +46,20 @@ class LlmConfigIn(BaseModel):
     scan_input_price: str | None = None
     scan_output_price: str | None = None
 
+    @field_validator(
+        "advice_input_price", "advice_output_price", "scan_input_price", "scan_output_price")
+    @classmethod
+    def _valid_price(cls, v: str | None) -> str | None:
+        # None/"" mean "unpriced"; anything else must parse as a Decimal.
+        # A bad value raises here -> FastAPI returns 422 (not an uncaught 500 later).
+        if v in (None, ""):
+            return v
+        try:
+            Decimal(v)
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError("invalid_price") from exc
+        return v
+
 
 async def _get_row(db) -> LlmConfig | None:
     result = await db.execute(select(LlmConfig).order_by(LlmConfig.id).limit(1))
@@ -51,8 +67,27 @@ async def _get_row(db) -> LlmConfig | None:
 
 
 def _dec(v):
-    from decimal import Decimal
     return None if v in (None, "") else Decimal(v)
+
+
+# Redact common API-key shapes from provider error text before it is returned.
+# Google's genai puts the FULL key in a ?key=... query param; OpenAI/Anthropic
+# keys start with sk-; Google keys start with AIza.
+_KEY_PATTERNS = [
+    re.compile(r"key=[^\s&\"']+"),          # ?key=<value> query params (Google)
+    re.compile(r"sk-[A-Za-z0-9_\-]+"),      # OpenAI / Anthropic secret keys
+    re.compile(r"AIza[A-Za-z0-9_\-]+"),     # Google API keys
+]
+
+
+def _scrub(text: str, api_key: str) -> str:
+    """Strip the submitted key + common key patterns from provider error text,
+    then truncate. The api_key must never reach the client."""
+    if api_key:
+        text = text.replace(api_key, "***")
+    for pat in _KEY_PATTERNS:
+        text = pat.sub("***", text)
+    return text[:200]
 
 
 @router.get("/llm-config", response_model=LlmConfigOut)
@@ -124,5 +159,5 @@ async def test_llm_config(body: LlmConfigIn, db: SessionDep, user: AdminUser) ->
     try:
         await _run_test_call(body.provider, api_key, body.advice_model)
     except Exception as exc:  # provider/auth/network failure -> clean report, never 500
-        return {"ok": False, "detail": str(exc)[:200]}
+        return {"ok": False, "detail": _scrub(str(exc), api_key)}
     return {"ok": True, "detail": "connection ok"}

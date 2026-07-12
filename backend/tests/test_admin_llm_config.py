@@ -51,3 +51,30 @@ async def test_test_endpoint_reports_failure_not_500(guru_client, monkeypatch):
         "api_key": "sk-bad"})
     assert r.status_code == 200
     assert r.json()["ok"] is False
+
+
+async def test_test_endpoint_never_leaks_key_in_detail(guru_client, monkeypatch):
+    await _make_admin(guru_client, monkeypatch)
+
+    # provider error text that embeds the submitted key (Google puts the FULL key
+    # in a ?key=... query param; OpenAI/Anthropic keys start with sk-).
+    async def leaky(*a, **k):
+        raise RuntimeError("auth failed for key=sk-supersecret123 (401)")
+    import app.api.admin as admin_mod
+    monkeypatch.setattr(admin_mod, "_run_test_call", leaky)
+    r = await guru_client.post("/api/admin/llm-config/test", json={
+        "provider": "openai", "advice_model": "gpt-4o", "scan_model": "gpt-4o-mini",
+        "api_key": "sk-supersecret123"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    # the submitted key must not appear anywhere in the response
+    assert "sk-supersecret123" not in str(body)
+
+
+async def test_put_invalid_price_returns_422(guru_client, monkeypatch):
+    await _make_admin(guru_client, monkeypatch)
+    r = await guru_client.put("/api/admin/llm-config", json={
+        "provider": "openai", "advice_model": "gpt-4o", "scan_model": "gpt-4o-mini",
+        "api_key": "sk-x", "advice_input_price": "abc"})
+    assert r.status_code == 422
