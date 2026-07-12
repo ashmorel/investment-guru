@@ -338,4 +338,59 @@ describe("PortfolioDetailPage", () => {
 
     expect(await screen.findByText(/no take yet — run a review/i)).toBeInTheDocument();
   });
+
+  it("lazily loads per-position news only once the row is expanded", async () => {
+    let newsRequested = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/news/AAPL/summary")) {
+        return new Response(JSON.stringify({ detail: "no_summary" }), {
+          status: 404, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/news/AAPL")) {
+        newsRequested = true;
+        return new Response(
+          JSON.stringify({
+            symbol: "AAPL",
+            name: "Apple Inc.",
+            items: [
+              { title: "Apple beats Q3 estimates", source: "Reuters", url: "https://example.com/a",
+                published_at: "2026-07-08T00:00:00Z" },
+            ],
+            as_of: "2026-07-08T00:00:00Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/signals")) {
+        return new Response(JSON.stringify({ signals: [], computed_at: null }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/guru/reviews")) {
+        return new Response(JSON.stringify({ reviews: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/valuation")) {
+        return new Response(JSON.stringify(VALUATION), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderPage();
+    await screen.findByText("AAPL");
+    expect(newsRequested).toBe(false);
+
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+
+    expect(await screen.findByText(/apple beats q3 estimates/i)).toBeInTheDocument();
+    expect(newsRequested).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: /hide news/i }));
+    expect(screen.queryByText(/apple beats q3 estimates/i)).not.toBeInTheDocument();
+  });
 });

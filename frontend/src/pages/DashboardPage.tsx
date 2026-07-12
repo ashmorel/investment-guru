@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import AttentionPanel from "../components/AttentionPanel";
 import GuruTakePanel from "../components/GuruTakePanel";
 import Money from "../components/Money";
+import NewsPanel from "../components/NewsPanel";
 import { apiFetch } from "../lib/api";
 import type { AnalyzeResponse, DashboardData } from "../lib/types";
 
@@ -92,6 +93,7 @@ export default function DashboardPage() {
       )}
       <GuruTakePanel />
       <AttentionPanel />
+      <NewsPanel />
     </div>
   );
 }

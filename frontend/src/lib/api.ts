@@ -2,9 +2,14 @@ import type {
   AllocationDraft,
   ApplyRequest,
   ApplyResult,
+  GuruReport,
   LlmConfig,
   LlmConfigInput,
+  NewsResponse,
+  NewsSummary,
   OrsoFundOut,
+  RefreshNewsResult,
+  StockNews,
 } from "./types";
 
 export class ApiError extends Error {
@@ -162,6 +167,45 @@ export function ingestErrorMessage(error: unknown): string | null {
     case 502:
     case 503:
       return "The Guru can't read screenshots right now — try again shortly, or use the CSV upload instead.";
+    default:
+      return null;
+  }
+}
+
+// --- News (Task 5) -----------------------------------------------------------
+
+export function getNews(): Promise<NewsResponse> {
+  return apiFetch<NewsResponse>("/api/news");
+}
+
+export function getStockNews(symbol: string): Promise<StockNews> {
+  return apiFetch<StockNews>(`/api/news/${encodeURIComponent(symbol)}`);
+}
+
+export function refreshNews(): Promise<RefreshNewsResult> {
+  return apiFetch<RefreshNewsResult>("/api/news/refresh", { method: "POST" });
+}
+
+export function getNewsSummary(symbol: string): Promise<GuruReport<NewsSummary>> {
+  return apiFetch<GuruReport<NewsSummary>>(`/api/news/${encodeURIComponent(symbol)}/summary`);
+}
+
+export function generateNewsSummary(symbol: string): Promise<GuruReport<NewsSummary>> {
+  return apiFetch<GuruReport<NewsSummary>>(`/api/news/${encodeURIComponent(symbol)}/summary`, {
+    method: "POST",
+  });
+}
+
+// The summary endpoints raise 422 (no headlines fetched yet for this symbol),
+// 404 (symbol not held in any portfolio) and the shared 429 budget error.
+export function newsSummaryErrorMessage(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  if (isBudgetExhausted(error)) return "Daily AI limit reached — resets tomorrow.";
+  switch (error.status) {
+    case 422:
+      return "No recent headlines to summarize yet.";
+    case 404:
+      return "This symbol isn't held in a portfolio.";
     default:
       return null;
   }

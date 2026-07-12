@@ -108,7 +108,53 @@ export interface PositionVerdict { symbol: string; action: GuruAction; convictio
 export interface ReviewPayload { positions: PositionVerdict[]; observations: string[]; watch_next: string[]; disclaimer: string; }
 export interface DigestPayload { earnings_this_week: { symbol: string; date: string | null; note: string }[]; movers: { symbol: string; note: string }[]; news_flags: { symbol: string | null; headline: string; comment: string }[]; summary: string; disclaimer: string; }
 export interface TakePayload { commentary: string; risks: { kind: string; note: string }[]; ideas: { symbol: string | null; action: GuruAction; conviction: Conviction; rationale: string }[]; disclaimer: string; }
-export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take" | "orso"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
+export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take" | "orso" | "news"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
+
+// --- News (Task 5) -----------------------------------------------------------
+// Mirrors backend/app/api/news.py NewsItemOut/NewsGroup/NewsResponse/StockNews
+// and backend/app/services/guru/schemas.py NewsSummaryPayload (the payload
+// shape of a GuruReport<NewsSummary> returned by the summary endpoints).
+
+export interface NewsItem {
+  title: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface NewsGroup {
+  symbol: string;
+  name: string;
+  latest_published_at: string | null;
+  items: NewsItem[];
+  summary_available: boolean;
+}
+
+export interface NewsResponse {
+  groups: NewsGroup[];
+  unavailable: string[];
+  as_of: string;
+}
+
+export interface StockNews {
+  symbol: string;
+  name: string;
+  items: NewsItem[];
+  as_of: string;
+}
+
+export interface RefreshNewsResult {
+  refreshed: string[];
+  unavailable: string[];
+}
+
+export interface NewsSummary {
+  summary: string;
+  sentiment: "positive" | "negative" | "neutral" | "watch";
+  key_points: string[];
+  disclaimer: string;
+}
+
 export interface InvestorProfile { risk_appetite: "cautious" | "balanced" | "adventurous"; horizon: "short" | "medium" | "long"; sector_interests: string[]; free_text: string; digest_enabled: boolean; }
 export interface UsageSummary { by_mode: { mode: string; calls: number; input_tokens: number; output_tokens: number; est_cost_usd: string | null }[]; total_cost_30d: string | null; }
 export interface ChatThread { id: number; title: string; portfolio_id: number | null; created_at: string; }

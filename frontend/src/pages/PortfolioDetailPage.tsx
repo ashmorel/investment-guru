@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Money from "../components/Money";
+import { PositionNews } from "../components/NewsPanel";
 import SignalBadges from "../components/SignalBadges";
 import VerdictChip from "../components/VerdictChip";
 import { apiFetch, ApiError } from "../lib/api";
@@ -64,6 +65,18 @@ export default function PortfolioDetailPage() {
       qc.invalidateQueries({ queryKey: ["attention"] });
     },
   });
+
+  // Per-position "Recent news" rows are collapsed by default and only fetch
+  // once expanded (PositionNews mounts lazily), so this page never pays for
+  // a news request until the user actually asks to see it.
+  const [expandedNews, setExpandedNews] = useState<Set<string>>(new Set());
+  const toggleNews = (sym: string) =>
+    setExpandedNews((prev) => {
+      const next = new Set(prev);
+      if (next.has(sym)) next.delete(sym);
+      else next.add(sym);
+      return next;
+    });
 
   const [symbol, setSymbol] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -163,12 +176,14 @@ export default function PortfolioDetailPage() {
             <th className="p-3 text-right">P&L</th>
             <th className="p-3">Signals</th>
             <th className="p-3">Guru's take</th>
+            <th className="p-3">News</th>
             <th className="p-3" />
           </tr>
         </thead>
         <tbody>
           {v.positions.map((p) => (
-            <tr key={p.position_id} className="border-b border-border">
+            <Fragment key={p.position_id}>
+              <tr className="border-b border-border">
               <td className="p-3 font-medium">{p.symbol}</td>
               <td className="p-3 text-muted">{p.name}</td>
               <td className="p-3 text-right tabular-nums">{p.quantity ?? "—"}</td>
@@ -220,6 +235,16 @@ export default function PortfolioDetailPage() {
                   );
                 })()}
               </td>
+              <td className="p-3">
+                <button
+                  type="button"
+                  onClick={() => toggleNews(p.symbol)}
+                  className="text-xs text-accent underline"
+                  aria-expanded={expandedNews.has(p.symbol)}
+                >
+                  {expandedNews.has(p.symbol) ? "Hide news" : "News"}
+                </button>
+              </td>
               <td className="p-3 text-right">
                 <button
                   onClick={() => removePosition.mutate(p.position_id)}
@@ -229,6 +254,14 @@ export default function PortfolioDetailPage() {
                 </button>
               </td>
             </tr>
+            {expandedNews.has(p.symbol) && (
+              <tr className="border-b border-border bg-bg/40">
+                <td colSpan={11} className="p-4">
+                  <PositionNews symbol={p.symbol} />
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

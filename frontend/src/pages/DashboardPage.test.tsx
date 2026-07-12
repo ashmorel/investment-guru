@@ -33,6 +33,12 @@ describe("DashboardPage", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
+      if (url.includes("/api/news")) {
+        return new Response(
+          JSON.stringify({ groups: [], unavailable: [], as_of: "2026-07-07T09:00:00Z" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -85,6 +91,12 @@ describe("DashboardPage", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
+      if (url.includes("/api/news")) {
+        return new Response(
+          JSON.stringify({ groups: [], unavailable: [], as_of: "2026-07-07T09:00:00Z" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -126,6 +138,12 @@ describe("DashboardPage", () => {
             ],
             as_of: "2026-07-07T09:00:00Z",
           }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/news")) {
+        return new Response(
+          JSON.stringify({ groups: [], unavailable: [], as_of: "2026-07-07T09:00:00Z" }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -183,6 +201,12 @@ describe("DashboardPage", () => {
             ],
             as_of: "2026-07-07T09:00:00Z",
           }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/news")) {
+        return new Response(
+          JSON.stringify({ groups: [], unavailable: [], as_of: "2026-07-07T09:00:00Z" }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
