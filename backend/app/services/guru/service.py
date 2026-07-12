@@ -11,7 +11,13 @@ from app.services.guru.budget import check_budget
 from app.services.guru.context import build_context
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
-from app.services.guru.schemas import DigestPayload, OrsoAdvicePayload, ReviewPayload, TakePayload
+from app.services.guru.schemas import (
+    DigestPayload,
+    NewsSummaryPayload,
+    OrsoAdvicePayload,
+    ReviewPayload,
+    TakePayload,
+)
 from app.services.market_data.quotes import QuoteService
 from app.services.orso.prices import OrsoPriceService
 from app.services.valuation import FxService
@@ -25,6 +31,15 @@ _ORSO_INSTRUCTION = (
     "revised monthly contribution figure and/or an allocation shift by asset class — "
     "framed as general guidance, not licensed financial advice. Comment on the "
     "projection in projection_comment."
+)
+
+
+_NEWS_INSTRUCTION = (
+    "Summarize the recent news for this stock for a retail investor. Return a 2-3 "
+    "sentence plain-English summary, a single overall sentiment "
+    "(positive/negative/neutral/watch), the key points as short bullets, and a one-line "
+    "disclaimer that this is general information, not advice. Base it ONLY on the "
+    "headlines provided."
 )
 
 
@@ -161,6 +176,37 @@ class GuruService:
                                          model=self.advice_model,
                                          usage=usage, report_id=report.id,
                                          price=self.advice_price)
+            await db.commit()
+            return report
+
+    async def generate_news_summary(self, db: AsyncSession, user: User,
+                                    instrument, headlines: list) -> GuruReport:
+        provider = self._require_provider()
+        lock = self._lock("news")
+        if lock.locked():
+            raise GenerationInProgress("news")
+        async with lock:
+            await check_budget(db, user.id)
+            payload_in = [
+                {"title": h.title, "source": h.source,
+                 "published_at": (h.published_at or h.fetched_at).isoformat()}
+                for h in headlines
+            ]
+            messages = [{"role": "user", "content":
+                         f"{_NEWS_INSTRUCTION}\n\n"
+                         f"Stock: {instrument.symbol} ({instrument.name})\n\n"
+                         + json.dumps(payload_in)}]
+            payload, usage = await provider.generate_structured(
+                system=PERSONA_V1, messages=messages, schema=NewsSummaryPayload,
+                model=self.scan_model, max_tokens=1024)
+            report = GuruReport(user_id=user.id, kind="news", portfolio_id=None,
+                                instrument_id=instrument.id, payload=payload.model_dump(),
+                                model=self.scan_model, created_at=_now())
+            db.add(report)
+            await db.flush()
+            await usage_mod.record_usage(db, user_id=user.id, mode="news",
+                                         model=self.scan_model, usage=usage,
+                                         report_id=report.id, price=self.scan_price)
             await db.commit()
             return report
 

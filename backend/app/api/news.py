@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, SessionDep
+from app.api.guru import GuruDep, ReportOut, _report_out, map_guru_errors
 from app.models import GuruReport, Instrument, NewsItem, Portfolio, Position
 from app.services.market_data.news import NewsService, YahooRssProvider
 from app.services.market_data.news_read import dedupe, rank_groups
@@ -137,6 +138,34 @@ async def get_stock_news(symbol: str, db: SessionDep, user: CurrentUser, news: N
 class RefreshOut(BaseModel):
     refreshed: list[str]
     unavailable: list[str]
+
+
+@router.post("/{symbol}/summary", response_model=ReportOut, status_code=201)
+async def create_summary(symbol: str, db: SessionDep, user: CurrentUser, guru: GuruDep,
+                         news: NewsServiceDep):
+    inst = await _instrument_for_symbol(db, user.id, symbol)
+    await news.refresh(db, [inst])
+    await db.commit()
+    headlines = dedupe(await _recent(db, inst.id))[:_PER_STOCK_FULL]
+    if not headlines:
+        raise HTTPException(status_code=422, detail="no_headlines")
+    with map_guru_errors():
+        report = await guru.generate_news_summary(db, user, inst, headlines)
+    return _report_out(report)
+
+
+@router.get("/{symbol}/summary", response_model=ReportOut)
+async def latest_summary(symbol: str, db: SessionDep, user: CurrentUser):
+    inst = await _instrument_for_symbol(db, user.id, symbol)
+    r = (await db.execute(
+        select(GuruReport).where(
+            GuruReport.user_id == user.id, GuruReport.kind == "news",
+            GuruReport.instrument_id == inst.id)
+        .order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(1)
+    )).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="no_summary")
+    return _report_out(r)
 
 
 @router.post("/refresh", response_model=RefreshOut)
