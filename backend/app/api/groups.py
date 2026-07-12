@@ -10,8 +10,17 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
+from app.api.guru import GuruDep, ReportOut, _report_out, map_guru_errors
 from app.api.valuation import get_services
-from app.models import GroupAssignment, GroupSnapshot, HoldingGroup, Instrument, Portfolio, Position
+from app.models import (
+    GroupAssignment,
+    GroupSnapshot,
+    GuruReport,
+    HoldingGroup,
+    Instrument,
+    Portfolio,
+    Position,
+)
 from app.services.groups.exposure import compute_group_exposure, write_snapshot
 
 _RANGE_DAYS = {"30d": 30, "90d": 90, "1y": 365}
@@ -257,3 +266,21 @@ async def trend(db: SessionDep, user: CurrentUser, range: str = "30d"):
     out = [{"group_id": k[0], "name": k[1], "color": k[2], "points": v["points"]}
            for k, v in series.items()]
     return {"series": out, "as_of": datetime.now(UTC).isoformat()}
+
+
+# --- sector-rotation advice (Guru) ------------------------------------------
+
+@router.post("/rotation", response_model=ReportOut, status_code=201)
+async def create_rotation(db: SessionDep, user: CurrentUser, guru: GuruDep):
+    with map_guru_errors():
+        report = await guru.generate_rotation(db, user)
+    return _report_out(report)
+
+
+@router.get("/rotation", response_model=ReportOut | None)
+async def read_rotation(db: SessionDep, user: CurrentUser):
+    r = (await db.execute(
+        select(GuruReport).where(GuruReport.user_id == user.id, GuruReport.kind == "rotation")
+        .order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(1)
+    )).scalar_one_or_none()
+    return _report_out(r) if r is not None else None
