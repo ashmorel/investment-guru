@@ -36,3 +36,61 @@ async def test_group_models_persist_and_snapshot_encrypts(db_session, make_instr
         "SELECT value_base FROM group_snapshots WHERE user_id=:u AND group_id IS NULL"),
         {"u": u.id})).scalar_one()
     assert got.startswith("v1:")
+
+
+async def _hold(auth_client, symbol, make_instrument, sector=None):
+    await make_instrument(symbol, sector=sector)
+    pid = (await auth_client.post("/api/portfolios",
+           json={"name": "P", "kind": "real", "base_currency": "GBP"})).json()["id"]
+    await auth_client.post(
+        f"/api/portfolios/{pid}/positions", json={"symbol": symbol, "quantity": "1"})
+
+
+async def test_group_crud_and_assign(auth_client, make_instrument):
+    await _hold(auth_client, "AAPL", make_instrument)
+    g = (await auth_client.post("/api/groups", json={"name": "Tech", "color": "#4F46E5"})).json()
+    assert g["name"] == "Tech"
+    # duplicate name -> 409
+    assert (await auth_client.post("/api/groups", json={"name": "Tech"})).status_code == 409
+    # assign a held symbol
+    r = await auth_client.put("/api/groups/assign", json={"symbol": "AAPL", "group_id": g["id"]})
+    assert r.status_code == 200
+    lst = (await auth_client.get("/api/groups")).json()
+    assert lst[0]["holding_count"] == 1
+    # assign a symbol not held -> 422
+    assert (await auth_client.put("/api/groups/assign",
+            json={"symbol": "NVDA", "group_id": g["id"]})).status_code == 422
+    # clear assignment (null) -> Ungrouped
+    await auth_client.put("/api/groups/assign", json={"symbol": "AAPL", "group_id": None})
+    assert (await auth_client.get("/api/groups")).json()[0]["holding_count"] == 0
+    # delete group cascades
+    assert (await auth_client.delete(f"/api/groups/{g['id']}")).status_code == 204
+
+
+async def test_seed_from_sectors_idempotent_nondestructive(auth_client, make_instrument):
+    await _hold(auth_client, "AAPL", make_instrument, sector="Technology")
+    await _hold(auth_client, "XOM", make_instrument, sector="Energy")
+    await _hold(auth_client, "ZZZ", make_instrument, sector=None)  # -> "Unclassified"
+    r1 = (await auth_client.post("/api/groups/seed-from-sectors")).json()
+    assert set(r1["created"]) == {"Technology", "Energy", "Unclassified"} and r1["assigned"] == 3
+    # move AAPL into a hand-made "Space" group
+    space = (await auth_client.post("/api/groups", json={"name": "Space"})).json()
+    await auth_client.put("/api/groups/assign", json={"symbol": "AAPL", "group_id": space["id"]})
+    # re-seed: creates nothing new, assigns nothing (all assigned), does NOT move AAPL back
+    r2 = (await auth_client.post("/api/groups/seed-from-sectors")).json()
+    assert r2["created"] == [] and r2["assigned"] == 0
+    groups = {g["name"]: g for g in (await auth_client.get("/api/groups")).json()}
+    assert groups["Space"]["holding_count"] == 1        # AAPL stayed in Space
+    assert groups["Technology"]["holding_count"] == 0
+
+
+async def test_groups_are_user_scoped(auth_client, client, db_session, make_instrument):
+    g = (await auth_client.post("/api/groups", json={"name": "Mine"})).json()
+    from app.core.security import hash_password
+    from app.models.user import User
+    db_session.add(User(email="bgrp@test.dev", password_hash=hash_password("pw123456")))
+    await db_session.commit()
+    await client.post("/api/auth/login", json={"email": "bgrp@test.dev", "password": "pw123456"})
+    assert (await client.get("/api/groups")).json() == []
+    assert (await client.patch(f"/api/groups/{g['id']}", json={"name": "x"})).status_code == 404
+    assert (await client.delete(f"/api/groups/{g['id']}")).status_code == 404

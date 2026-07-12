@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.groups import router as groups_router
 from app.api.guru import router as guru_router
 from app.api.imports import router as imports_router
 from app.api.instruments import router as instruments_router
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
 
     app.include_router(admin_router)
     app.include_router(auth_router)
+    app.include_router(groups_router)
     app.include_router(guru_router)
     app.include_router(imports_router)
     app.include_router(instruments_router)
