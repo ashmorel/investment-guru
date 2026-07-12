@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-12 (ORSO data-entry + advice complete, migration 0009)._
+_Last updated: 2026-07-12 (dashboard/stock-news UX complete, migration 0011)._
 
 ## Phase 1 — portfolio core: COMPLETE
 
@@ -303,6 +303,44 @@ Backend **324** tests; each of the 6 backend tasks reviewed with fix loops (nota
 role preservation; `/test` key-scrub + price→422). All 3 adapters verified against the live SDKs via
 context7 (openai 2.45, google-genai 2.11) and mock-tested (no real keys/network). **`ANTHROPIC_API_KEY`
 env is now only the pre-panel fallback** — the active provider/key live in the encrypted `llm_config` row.
+
+## Enhancement — Dashboard / stock-news UX: COMPLETE (2026-07-12, migration 0011)
+
+Turned the buried one-line `news_recent` signal into a readable news surface. Spec
+`docs/superpowers/specs/2026-07-12-dashboard-news-ux-design.md`, plan `.../plans/2026-07-12-dashboard-news-ux.md`.
+Live in prod (0010→0011 clean; endpoints 401 unauth). Final Opus whole-branch review: see the review report.
+
+### Data model (0011)
+`GuruReport.instrument_id` (nullable FK, indexed) + `kind="news"`; the summary payload (existing
+`EncryptedJSON` column) is `{summary, sentiment: positive|negative|neutral|watch, key_points, disclaimer}`
+(`NewsSummaryPayload`). Additive/reversible.
+
+### Read API (`app/api/news.py` + `app/services/market_data/news_read.py`)
+`GET /api/news` returns per-holding groups: each stock's headlines **de-duped** by normalized title
+(`norm_title`/`dedupe` — keep earliest-published, newest-first), capped 8, groups **ranked** by
+recent-headline count then recency (`rank_groups`), with a `summary_available` flag; TTL-refreshed first
+via the existing `NewsService.refresh` (6h; feed failure degrades to cache per-instrument → `unavailable`,
+never 500). `GET /api/news/{symbol}` (fuller list, cap 30, 404 if not held), `POST /api/news/refresh`.
+All scoped to the user's own instruments (Position→Portfolio.user_id join).
+
+### On-demand summary
+`GuruService.generate_news_summary(db, user, instrument, headlines)` — "news" lock, `check_budget` first,
+`generate_structured(schema=NewsSummaryPayload, model=self.scan_model)` (the **cheap scan model**, not
+advice), persists `GuruReport(kind="news", instrument_id)`, `record_usage(mode="news", price=self.scan_price)`.
+`POST /api/news/{symbol}/summary` (422 no-headlines, 404 not-held, 429 budget, degrade-never-500 via
+`map_guru_errors`), `GET /api/news/{symbol}/summary` (latest stored, 404 none). Saved + regenerable.
+Headlines and summaries are separate endpoints, so headlines render even when a summary fails.
+
+### Frontend
+`components/NewsPanel.tsx` on the dashboard (below AttentionPanel): ranked cards, headline rows
+(source · relative time · `rel="noreferrer"` external link), Refresh (invalidates `["news"]`),
+Summarize/Regenerate revealing the summary + color-coded sentiment pill + key points; per-position
+collapsible list on `PortfolioDetailPage`. `npm run check` green (108 tests incl. vitest-axe).
+
+### Verified
+Backend **343** tests; each of the 3 backend tasks reviewed with fix loops. Live: 0011 clean, `/api/health`
+200, `GET /api/news` 401 (mounted). Cross-user scoped (own instruments only); the old `news_recent`
+attention signal was kept as a nudge.
 
 ## How to run locally
 ```bash
