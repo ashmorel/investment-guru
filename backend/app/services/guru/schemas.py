@@ -101,3 +101,25 @@ class NewsSummaryPayload(BaseModel):
     sentiment: Literal["positive", "negative", "neutral", "watch"]
     key_points: list[str]
     disclaimer: str
+
+
+class GroupObservation(BaseModel):
+    name: str
+    weight_pct: str
+    observation: str
+    signal: Literal["favour", "trim", "hold"]
+
+
+class Rotation(BaseModel):
+    from_group: str
+    to_group: str
+    rationale: str
+    conviction: Literal["low", "med", "high"]
+
+
+class RotationAdvicePayload(BaseModel):
+    market_view: str
+    groups: list[GroupObservation]
+    rotations: list[Rotation]
+    caveats: list[str]
+    disclaimer: str

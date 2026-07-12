@@ -16,6 +16,7 @@ from app.services.guru.schemas import (
     NewsSummaryPayload,
     OrsoAdvicePayload,
     ReviewPayload,
+    RotationAdvicePayload,
     TakePayload,
 )
 from app.services.market_data.quotes import QuoteService
@@ -48,6 +49,27 @@ def _orso_invalid_codes(payload: OrsoAdvicePayload, fund_menu: set[str]) -> set[
     codes |= {s.from_code for s in payload.switch_plan if s.from_code is not None}
     codes |= {s.to_code for s in payload.switch_plan if s.to_code is not None}
     return codes - fund_menu
+
+
+_ROTATION_INSTRUCTION = (
+    "Give a sector/theme ROTATION view across the user's holding groups. Reason ONLY "
+    "from the grounding context provided (weights, drift, momentum, news themes, "
+    "profile) — do NOT invent live prices, rates, or any figures not in the context; "
+    "if the data doesn't support a call, say so in caveats instead of guessing. In "
+    "market_view give a short, explicitly-hedged read on how the groups are positioned "
+    "now. For every group give an observation and a signal (favour/trim/hold). In "
+    "rotations, suggest directional shifts between groups the user actually has "
+    "(from_group -> to_group) with a plain rationale and conviction — DIRECTIONAL ONLY: "
+    "never state amounts, share counts, or specific prices, and never give a specific "
+    "trade instruction. Record thin history / sparse news / high uncertainty in "
+    "caveats. Always include the disclaimer that this is general educational "
+    "information, not regulated financial advice."
+)
+
+
+def _rotation_invalid_groups(payload: RotationAdvicePayload, group_names: set[str]) -> set[str]:
+    names = {r.from_group for r in payload.rotations} | {r.to_group for r in payload.rotations}
+    return names - group_names
 
 
 class GenerationInProgress(Exception):
