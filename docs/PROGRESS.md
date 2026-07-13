@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-12 (user-defined sector/theme grouping complete, migration 0012)._
+_Last updated: 2026-07-13 (sector-rotation advice complete, no migration — enhancement programme DONE)._
 
 ## Phase 1 — portfolio core: COMPLETE
 
@@ -375,6 +375,44 @@ whole-branch review: **READY TO MERGE**, migration go/no-go **GO**.
 ### Verified
 Backend group suite **15** tests (full suite 356+); frontend **126** (incl. vitest-axe). Live: 0011→0012
 migration clean in Railway logs, `/api/groups` · `/exposure` · `/holdings` all 401 (mounted), `/sectors` 200.
+
+## Enhancement Project 5 — sector-rotation advice: COMPLETE (2026-07-13, NO migration) — PROGRAMME DONE
+
+Spec `.../specs/2026-07-12-sector-rotation-advice-design.md`, plan `.../plans/2026-07-12-sector-rotation-advice.md`
+(7 tasks, subagent-driven TDD). Live in prod (no DB change — reuses `GuruReport(kind="rotation")` + the usage
+ledger, Alembic head stays **0012**; endpoints 401 unauth). Final Opus whole-branch review: **READY TO MERGE**.
+This is the final project — the 5-project enhancement programme is complete.
+
+### What it is
+A Guru **"rotation view"**: a macro-aware read on how the user's holding groups are positioned + directional
+rotation suggestions, grounded in the app's OWN data (news + signals + group weight/drift), on-demand on the
+Sectors page. Educational commentary, never executes trades.
+
+### Grounding (`app/services/groups/rotation_context.py::build_rotation_context`)
+Per user-defined group (incl. null Ungrouped): current weight + **weight-share drift** (`from_pct`/`to_pct` =
+group value ÷ that date's total across ALL the user's groups, from `GroupSnapshot` history — NOT absolute value,
+so market-wide appreciation isn't mistaken for rotation), momentum (signals engine), recent news themes (Project
+3 read), + profile risk/horizon; an `availability` block records which inputs were present. Every input degrades
+(missing → None/[], never raises); all queries user-scoped (Signal→Portfolio.user_id verified).
+
+### Advice (`GuruService.generate_rotation`, `app/services/guru/schemas.py`)
+Mirrors `generate_orso`: advice-model structured call → `RotationAdvicePayload` (`market_view`,
+`groups[{name,weight_pct,observation,signal:favour/trim/hold}]`, `rotations[{from_group,to_group,rationale,
+conviction:low/med/high}]`, `caveats`, `disclaimer` — **money-free schema, no amount/price/quantity fields**),
+unknown-group-name re-prompt once then `LLMError`, encrypted `GuruReport(kind="rotation")`, usage recorded,
+budget (429) + single-flight lock (409). `_ROTATION_INSTRUCTION` is strict: reason ONLY from the provided
+context, no invented figures, DIRECTIONAL ONLY (no trades/amounts/prices), always the disclaimer.
+
+### API + frontend
+`POST /api/groups/rotation` (generate+persist, `map_guru_errors` → 429/409/502/503) and
+`GET /api/groups/rotation` (latest saved report or **null**) in `app/api/groups.py`, both user-scoped. Frontend
+rotation panel on `SectorsPage.tsx` (below Trend): on-demand Generate/Regenerate, empty-state prompt (no LLM call
+until clicked), market-view callout + per-group signal pills + suggested rotations + caveats + disclaimer;
+colours mapped group name→id (Ungrouped grey); 429/409/error states reuse the ORSO advice panel.
+
+### Verified
+Backend rotation tests (schema/context/service/API, full suite **372**); frontend **129** (incl. vitest-axe).
+Live: no migration (head 0012), `POST`/`GET /api/groups/rotation` 401 (mounted), `/sectors` 200.
 
 ## How to run locally
 ```bash
