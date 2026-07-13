@@ -27,6 +27,27 @@ def _norm_name(name: str) -> str:
     return _WS_RE.sub(" ", _PUNCT_RE.sub(" ", name.lower())).strip()
 
 
+# Real-world HSBC ORSO statements format numbers as "683,575.23" (thousands
+# commas), "9.97%" (percentages) or "HK$683,575.23" / "683575.23 HKD"
+# (currency symbol/code prefix or suffix). Strip those wrappers before
+# parsing so the value underneath still round-trips through Decimal; a
+# genuinely non-numeric value ("n/a") still ends up unparseable.
+_CCY_SYMBOLS = "$€£¥"
+_LEADING_CCY_RE = re.compile(rf"^[A-Za-z]{{0,3}}[{re.escape(_CCY_SYMBOLS)}]?\s*")
+_TRAILING_CCY_RE = re.compile(rf"(\s+[A-Za-z]{{1,3}}|[{re.escape(_CCY_SYMBOLS)}])$")
+
+# Only strip commas when they form *legitimate* thousands grouping
+# ("683,575.23", "1,234,567.89"). Blindly stripping every comma would
+# silently mangle "1,2,3" -> 123 or a European decimal-comma "9,97" -> 997
+# (10x wrong) with no unparseable flag — worse than the original bug on a
+# financial save screen. Anything not matching this shape stays unparseable.
+_THOUSANDS_RE = re.compile(r"^-?\d{1,3}(,\d{3})+(\.\d+)?$")
+
+# An acronym word is a run of alphanumerics; used both for the code-derivation
+# acronym and (via _norm_name) for fuzzy name matching.
+_WORD_RE = re.compile(r"[0-9A-Za-z]+")
+
+
 class ProposedFund(BaseModel):
     code: str
     name: str
@@ -72,10 +93,41 @@ def parse_csv(text: str) -> list[dict]:
 def _dec(val: str | None) -> Decimal | None:
     if not val:
         return None
+    # Order matters: strip currency envelope + % + whitespace FIRST, then
+    # validate/strip thousands commas, then parse.
+    s = val.strip().replace("%", "")
+    s = _LEADING_CCY_RE.sub("", s)
+    s = _TRAILING_CCY_RE.sub("", s)
+    s = s.strip()
+    if "," in s:
+        if not _THOUSANDS_RE.match(s):
+            return None
+        s = s.replace(",", "")
     try:
-        return Decimal(val)
+        return Decimal(s)
     except (InvalidOperation, TypeError):
         return None
+
+
+def _derive_code(name: str, taken: set[str]) -> str:
+    """Uppercase acronym of `name`'s alphanumeric words, capped at 16 chars,
+    deduped against `taken` (mutated in place) by numeric suffix. Falls back
+    to a truncated normalized name if the acronym is too short to be useful,
+    and to "FUND" if there's nothing usable at all."""
+    acronym = "".join(w[0] for w in _WORD_RE.findall(name.upper()))[:16]
+    if len(acronym) >= 3:
+        base = acronym
+    else:
+        base = _norm_name(name).upper().replace(" ", "")[:16] or "FUND"
+
+    code = base
+    n = 2
+    while code in taken:
+        suffix = str(n)
+        code = base[: 16 - len(suffix)] + suffix
+        n += 1
+    taken.add(code)
+    return code
 
 
 async def build_draft(
@@ -86,6 +138,7 @@ async def build_draft(
     )).scalars().all()
     by_code = {f.code.upper(): f for f in funds}
     by_name = {_norm_name(f.name): f for f in funds}
+    taken: set[str] = set(by_code.keys())
 
     rows: list[DraftRow] = []
     pct_sum = Decimal("0")
@@ -115,8 +168,13 @@ async def build_draft(
 
         proposed = None
         if match is None:
+            if code and len(code) <= 16:
+                proposed_code = code
+                taken.add(proposed_code)
+            else:
+                proposed_code = _derive_code(name or code, taken)
             proposed = ProposedFund(
-                code=code, name=name or code, currency=eff_currency)
+                code=proposed_code, name=name or code, currency=eff_currency)
 
         if pct is not None:
             pct_sum += pct

@@ -77,3 +77,97 @@ async def test_csv_unparseable_value_flagged(orso_client):
     assert r.status_code == 200
     row = r.json()["rows"][0]
     assert "unparseable_value" in row["flags"]
+
+
+async def test_csv_value_with_thousands_commas_parses(orso_client):
+    text = ("fund_code,units,value,contribution_pct\n"
+            'AAA,10,"683,575.23",100\n')
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    row = r.json()["rows"][0]
+    assert "unparseable_value" not in row["flags"]
+    assert row["value"] == "683575.23"
+
+
+async def test_csv_malformed_comma_numbers_are_unparseable(orso_client):
+    # Blindly stripping commas would turn these into WRONG numbers with no
+    # flag: "1,2,3"->123, European decimal-comma "9,97"->997 (10x), "1,23".
+    # They must all stay unparseable instead.
+    for bad in ("1,2,3", "9,97", "1,23"):
+        text = ("fund_code,units,value,contribution_pct\n"
+                f'AAA,10,"{bad}",100\n')
+        r = await _csv(orso_client, text)
+        assert r.status_code == 200
+        row = r.json()["rows"][0]
+        assert "unparseable_value" in row["flags"], bad
+        assert row["value"] is None, bad
+
+
+async def test_csv_legitimate_thousands_grouping_parses(orso_client):
+    cases = {"683,575.23": "683575.23", "1,234,567.89": "1234567.89",
+             "HK$683,575.23": "683575.23"}
+    for raw, expected in cases.items():
+        text = ("fund_code,units,value,contribution_pct\n"
+                f'AAA,10,"{raw}",100\n')
+        r = await _csv(orso_client, text)
+        assert r.status_code == 200
+        row = r.json()["rows"][0]
+        assert "unparseable_value" not in row["flags"], raw
+        assert row["value"] == expected, raw
+
+
+async def test_csv_pct_with_percent_sign_parses(orso_client):
+    text = ("fund_code,units,value,contribution_pct\n"
+            "AAA,10,100,9.97%\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    row = r.json()["rows"][0]
+    assert "unparseable_pct" not in row["flags"]
+    assert row["contribution_pct"] == "9.97"
+
+
+async def test_csv_value_with_currency_prefix_and_suffix_parses(orso_client):
+    text = ("fund_code,units,value,contribution_pct\n"
+            "AAA,10,HK$683575.23,100\n"
+            "BBB,10,683575.23 HKD,100\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    rows = r.json()["rows"]
+    for row in rows:
+        assert "unparseable_value" not in row["flags"]
+        assert row["value"] == "683575.23"
+
+
+async def test_csv_junk_value_still_unparseable(orso_client):
+    text = ("fund_code,units,value,contribution_pct\n"
+            "AAA,10,n/a,100\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    row = r.json()["rows"][0]
+    assert "unparseable_value" in row["flags"]
+
+
+async def test_unmatched_long_name_gets_derived_short_code(orso_client):
+    text = ("fund_code,fund_name,units,value,contribution_pct\n"
+            "Hang Seng Index Tracking Fund Class A Accumulation,"
+            "Hang Seng Index Tracking Fund Class A Accumulation,10,100,100\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    row = r.json()["rows"][0]
+    assert row["proposed_fund"] is not None
+    assert len(row["proposed_fund"]["code"]) <= 16
+    assert row["proposed_fund"]["name"] == (
+        "Hang Seng Index Tracking Fund Class A Accumulation")
+
+
+async def test_unmatched_funds_with_colliding_derived_codes_get_distinct_codes(orso_client):
+    text = ("fund_code,fund_name,units,value,contribution_pct\n"
+            "Hang Seng Index Tracking Fund,Hang Seng Index Tracking Fund,10,100,50\n"
+            "Hang Seng Income Trust Fund,Hang Seng Income Trust Fund,10,100,50\n")
+    r = await _csv(orso_client, text)
+    assert r.status_code == 200
+    rows = r.json()["rows"]
+    codes = [row["proposed_fund"]["code"] for row in rows]
+    assert len(set(codes)) == len(codes)
+    for code in codes:
+        assert len(code) <= 16

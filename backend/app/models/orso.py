@@ -19,7 +19,7 @@ class OrsoFund(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    code: Mapped[str] = mapped_column(String(16))
+    code: Mapped[str] = mapped_column(String(32))
     name: Mapped[str] = mapped_column(String(120))
     asset_class: Mapped[str] = mapped_column(String(32))
     risk_rating: Mapped[int] = mapped_column()

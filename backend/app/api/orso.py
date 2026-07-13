@@ -102,7 +102,7 @@ class FundOut(BaseModel):
 
 
 class FundCreate(BaseModel):
-    code: str = Field(min_length=1, max_length=16)
+    code: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=120)
     asset_class: str = Field(min_length=1, max_length=32)
     risk_rating: int = Field(ge=1, le=7)
@@ -336,7 +336,7 @@ class ApplyItem(BaseModel):
 
 
 class ApplyNewFund(BaseModel):
-    code: str = Field(min_length=1, max_length=16)
+    code: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=120)
     currency: str = Field(min_length=3, max_length=3)
     asset_class: str = Field(default="unknown", max_length=32)

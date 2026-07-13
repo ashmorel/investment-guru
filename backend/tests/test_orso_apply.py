@@ -70,6 +70,25 @@ async def test_apply_rejects_other_users_fund(orso_client, client, db_session):
     assert r.status_code == 422
 
 
+async def test_apply_accepts_long_derived_code(orso_client, db_session):
+    # A 20-char code (e.g. a derived acronym+suffix) previously 422'd against
+    # the old max_length=16; the widened column/schema now accepts up to 32.
+    long_code = "HSITFACCUMULATION200"
+    assert len(long_code) == 20
+    body = {
+        "new_funds": [{"code": long_code, "name": "Hang Seng Index Tracking Fund",
+                       "currency": "HKD", "asset_class": "equity", "risk_rating": 5}],
+        "allocations": [{"new_fund_code": long_code, "units": "10",
+                         "contribution_pct": "100"}],
+        "note": None,
+    }
+    r = await orso_client.post("/api/orso/allocation/apply", json=body)
+    assert r.status_code == 200
+    fund = (await db_session.execute(
+        select(OrsoFund).where(OrsoFund.code == long_code))).scalar_one()
+    assert fund.code == long_code
+
+
 async def test_apply_rejects_units_to_archived_fund(orso_client, db_session):
     # Create and archive a fund, then try to allocate units to it
     fid = (await orso_client.post("/api/orso/funds", json={
