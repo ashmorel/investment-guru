@@ -1,14 +1,13 @@
 """Daily per-group value snapshots (forward-only trend history). Cheap, no LLM;
 per-user failure-isolated; idempotent (write_snapshot delete-then-inserts)."""
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from app.api.valuation import get_services
 from app.core.db import SessionLocal
 from app.models import Portfolio, User
-from app.services.groups.exposure import compute_group_exposure, write_snapshot
+from app.services.groups.exposure import compute_group_exposure, local_today, write_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ async def run_group_snapshot_job(session_factory=None) -> None:
     quotes, fx = get_services()
     async with factory() as db:
         user_ids = await _users_with_real_holdings(db)
-    today = datetime.now(UTC).date()
+    today = local_today()
     for uid in user_ids:
         try:
             async with factory() as db:

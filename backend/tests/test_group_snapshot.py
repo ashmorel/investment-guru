@@ -1,11 +1,12 @@
 import types as _types
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select
 
 from app.models import GroupSnapshot
+from app.services.groups.exposure import local_today
 from tests.conftest import TestSession
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -102,7 +103,7 @@ async def test_run_group_snapshot_job_writes_today_row(
 
     await run_group_snapshot_job(session_factory=TestSession)
 
-    today = datetime.now(UTC).date()
+    today = local_today()
     rows = (await db_session.execute(
         select(GroupSnapshot).where(
             GroupSnapshot.user_id == user.id, GroupSnapshot.as_of == today))).scalars().all()

@@ -21,7 +21,7 @@ from app.models import (
     Portfolio,
     Position,
 )
-from app.services.groups.exposure import compute_group_exposure, write_snapshot
+from app.services.groups.exposure import compute_group_exposure, local_today, write_snapshot
 
 _RANGE_DAYS = {"30d": 30, "90d": 90, "1y": 365}
 
@@ -226,7 +226,7 @@ async def exposure(db: SessionDep, user: CurrentUser,
         # requests racing the (user_id, group_id, as_of) unique constraint —
         # must never fail the exposure request. Roll back and still return 200.
         try:
-            await write_snapshot(db, user, result, datetime.now(UTC).date())
+            await write_snapshot(db, user, result, local_today())
             await db.commit()  # persists snapshot rows + FxRate rows cached by fx.get_rate
         except Exception:
             logger.exception("opportunistic group snapshot write failed")
@@ -240,7 +240,7 @@ async def exposure(db: SessionDep, user: CurrentUser,
 @router.get("/trend")
 async def trend(db: SessionDep, user: CurrentUser, range: str = "30d"):
     days = _RANGE_DAYS.get(range, 30)
-    cutoff = datetime.now(UTC).date() - timedelta(days=days)
+    cutoff = local_today() - timedelta(days=days)
     rows = (await db.execute(
         select(GroupSnapshot).where(
             GroupSnapshot.user_id == user.id, GroupSnapshot.as_of >= cutoff)

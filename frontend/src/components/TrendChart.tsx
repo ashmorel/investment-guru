@@ -53,7 +53,7 @@ export default function TrendChart({
       <title>Group {metric === "value" ? "value" : "weight"} trend</title>
       {series.map((s) => (
         <polyline
-          key={s.name}
+          key={s.group_id ?? "ungrouped"}
           points={s.points.map((p) => `${xFor(p.as_of)},${yFor(Number(p[field]))}`).join(" ")}
           fill="none"
           stroke={s.color || "#94a3b8"}

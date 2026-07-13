@@ -1,14 +1,24 @@
+from datetime import UTC, datetime
 from datetime import date as _date
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete as _delete
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.models import GroupAssignment, GroupSnapshot, HoldingGroup, Portfolio
 from app.services.valuation import value_portfolio
 
 _Q = Decimal("0.01")
 _BASE = "GBP"  # common reporting currency for cross-portfolio aggregation
+
+
+def local_today() -> _date:
+    """Current calendar date in the app's configured timezone (guru_timezone),
+    so a snapshot written late-evening UTC lands on the correct local day —
+    consistent with the daily digest's timezone handling."""
+    return datetime.now(UTC).astimezone(ZoneInfo(settings.guru_timezone)).date()
 
 
 async def compute_group_exposure(db, user, quote_service, fx, portfolio_id=None) -> dict:

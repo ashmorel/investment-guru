@@ -18,7 +18,7 @@ import {
   seedGroups,
   updateGroup,
 } from "../lib/api";
-import type { HoldingGroup, Portfolio, RotationItem, TrendRange } from "../lib/types";
+import type { HoldingGroup, Portfolio, TrendRange } from "../lib/types";
 
 // Groups created without an explicit color (e.g. via seed-from-sectors) come
 // back from the API with color: "" — fall back to a small default palette by
@@ -260,7 +260,7 @@ function RotationPanel({ groups }: { groups: HoldingGroup[] }) {
               Suggested rotations
             </p>
             <ul className="mt-2 space-y-2">
-              {latest.payload.rotations.map((r: RotationItem, i: number) => (
+              {latest.payload.rotations.map((r, i) => (
                 <li key={`${r.from_group}-${r.to_group}-${i}`} className="text-sm">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span
