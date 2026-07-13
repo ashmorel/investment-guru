@@ -48,20 +48,47 @@ const TREND = {
   as_of: "2026-07-12T08:00:00Z",
 };
 
+const ROTATION_REPORT = {
+  id: 1,
+  kind: "rotation",
+  payload: {
+    market_view: "Growth names look extended — rotate toward defensives.",
+    groups: [
+      { name: "Tech", weight_pct: "70.00", observation: "Overweight vs. benchmark.", signal: "trim" },
+      { name: "Ungrouped", weight_pct: "30.00", observation: "Underweight defensives.", signal: "favour" },
+    ],
+    rotations: [
+      {
+        from_group: "Tech",
+        to_group: "Ungrouped",
+        rationale: "Lock in gains and diversify into defensives.",
+        conviction: "med",
+      },
+    ],
+    caveats: ["Rebalancing has tax and trading-cost implications."],
+    disclaimer: "The Guru is not regulated financial advice.",
+  },
+  model: "claude-sonnet",
+  created_at: "2026-07-12T09:00:00Z",
+};
+
 function mockApi(overrides?: {
   groups?: unknown[];
   groupsAfterSeed?: unknown[];
   holdings?: unknown[];
   holdingsAfterAssign?: unknown[];
   exposure?: unknown;
+  rotation?: unknown;
   onSeedPost?: () => Response | Promise<Response>;
   onAssignPut?: (body: unknown) => void;
   onCreatePost?: (body: unknown) => void;
   onPatch?: (id: string, body: unknown) => void;
   onDelete?: (id: string) => void;
+  onRotationPost?: () => Response | Promise<Response>;
 }) {
   let seeded = false;
   let assigned = false;
+  let rotationGenerated = false;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -85,6 +112,15 @@ function mockApi(overrides?: {
     }
     if (url.includes("/api/groups/trend")) {
       return jsonResponse(TREND);
+    }
+    if (url.includes("/api/groups/rotation") && method === "GET") {
+      if (rotationGenerated) return jsonResponse(ROTATION_REPORT);
+      return jsonResponse(overrides?.rotation ?? null);
+    }
+    if (url.includes("/api/groups/rotation") && method === "POST") {
+      if (overrides?.onRotationPost) return overrides.onRotationPost();
+      rotationGenerated = true;
+      return jsonResponse(ROTATION_REPORT, 201);
     }
     if (url.match(/\/api\/groups\/\d+$/) && method === "PATCH") {
       const id = url.match(/\/api\/groups\/(\d+)$/)?.[1] ?? "";
@@ -271,10 +307,48 @@ describe("SectorsPage", () => {
   });
 
   it("has no detectable accessibility violations", async () => {
-    mockApi();
+    mockApi({ rotation: ROTATION_REPORT });
     const { container } = renderPage();
     await screen.findByText("Tech", { selector: "span.flex-1" });
     await screen.findByRole("img");
+    await screen.findByText(/growth names look extended/i);
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  describe("Guru's rotation view", () => {
+    it("shows the empty state with a Generate button when no rotation report exists yet", async () => {
+      mockApi();
+      renderPage();
+
+      await screen.findByText("Tech", { selector: "span.flex-1" });
+      expect(
+        await screen.findByRole("button", { name: /generate rotation view/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/growth names look extended/i)).not.toBeInTheDocument();
+    });
+
+    it("clicking Generate rotation view calls POST and renders the market view + a rotation row", async () => {
+      mockApi();
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByRole("button", { name: /generate rotation view/i }));
+
+      expect(await screen.findByText(/growth names look extended/i)).toBeInTheDocument();
+      expect(screen.getByText("Suggested rotations")).toBeInTheDocument();
+      expect(screen.getByText(/lock in gains and diversify into defensives/i)).toBeInTheDocument();
+    });
+
+    it("shows the daily-limit message when generating the rotation view returns 429", async () => {
+      mockApi({ onRotationPost: () => jsonResponse({ detail: "budget_exhausted" }, 429) });
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByRole("button", { name: /generate rotation view/i }));
+
+      expect(
+        await screen.findByText(/daily ai limit reached — resets tomorrow/i),
+      ).toBeInTheDocument();
+    });
   });
 });

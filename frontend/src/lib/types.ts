@@ -334,3 +334,38 @@ export interface GroupTrend {
 }
 
 export type TrendRange = "30d" | "90d" | "1y";
+
+// --- Sector-rotation advice (Guru) -------------------------------------------
+// Mirrors backend/app/services/guru/schemas.py RotationAdvicePayload
+// (GroupObservation/Rotation) and the ReportOut shape returned by
+// POST/GET /api/groups/rotation in backend/app/api/groups.py.
+
+export interface RotationGroup {
+  name: string;
+  weight_pct: string;
+  observation: string;
+  signal: "favour" | "trim" | "hold";
+}
+
+export interface RotationItem {
+  from_group: string;
+  to_group: string;
+  rationale: string;
+  conviction: "low" | "med" | "high";
+}
+
+export interface RotationPayload {
+  market_view: string;
+  groups: RotationGroup[];
+  rotations: RotationItem[];
+  caveats: string[];
+  disclaimer: string;
+}
+
+export interface RotationReport {
+  id: number;
+  kind: string;
+  payload: RotationPayload;
+  model: string;
+  created_at: string;
+}

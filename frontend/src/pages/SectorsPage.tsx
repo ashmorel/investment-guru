@@ -3,18 +3,22 @@ import { useState } from "react";
 import Money from "../components/Money";
 import TrendChart from "../components/TrendChart";
 import {
+  ApiError,
   apiFetch,
   assignGroup,
   createGroup,
   deleteGroup,
+  generateRotation,
   getGroupExposure,
   getGroupHoldings,
   getGroups,
   getGroupTrend,
+  getRotation,
+  isBudgetExhausted,
   seedGroups,
   updateGroup,
 } from "../lib/api";
-import type { HoldingGroup, Portfolio, TrendRange } from "../lib/types";
+import type { HoldingGroup, Portfolio, RotationItem, TrendRange } from "../lib/types";
 
 // Groups created without an explicit color (e.g. via seed-from-sectors) come
 // back from the API with color: "" — fall back to a small default palette by
@@ -118,6 +122,185 @@ function GroupRow({
         </>
       )}
     </li>
+  );
+}
+
+// --- Guru's rotation view ------------------------------------------------------
+// Rotations/observations carry group NAMES (not ids) — map name → id via the
+// `groups` query already on the page so the colour dots match the Manage
+// list, Exposure bars, and Trend chart. A name with no matching group (i.e.
+// "Ungrouped") falls back to the same muted grey via resolveColor(null, "").
+
+const SIGNAL_TONE: Record<"favour" | "trim" | "hold", string> = {
+  favour: "bg-gain/10 text-gain",
+  trim: "bg-flag/10 text-flag",
+  hold: "border border-border bg-bg text-muted",
+};
+
+function RotationPanel({ groups }: { groups: HoldingGroup[] }) {
+  const qc = useQueryClient();
+
+  const rotationQuery = useQuery({
+    queryKey: ["rotation"],
+    queryFn: getRotation,
+  });
+
+  const generate = useMutation({
+    mutationFn: () => generateRotation(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rotation"] }),
+  });
+
+  const unconfigured =
+    generate.isError && generate.error instanceof ApiError && generate.error.status === 503;
+  const alreadyGenerating =
+    generate.isError && generate.error instanceof ApiError && generate.error.status === 409;
+  const budgetExhausted = generate.isError && isBudgetExhausted(generate.error);
+  const generateFailed = generate.isError && !unconfigured && !alreadyGenerating && !budgetExhausted;
+
+  const latest = rotationQuery.data ?? null;
+
+  function colorForGroupName(name: string): string {
+    const match = groups.find((g) => g.name === name);
+    return match ? resolveColor(match.id, match.color) : resolveColor(null, "");
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-surface p-5 shadow">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="text-sm text-accent">
+            ✦
+          </span>
+          <h2 className="font-medium text-text">Guru's rotation view</h2>
+        </div>
+        {latest && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted">
+              Generated {new Date(latest.created_at).toLocaleString()}
+            </span>
+            <button
+              type="button"
+              onClick={() => generate.mutate()}
+              disabled={generate.isPending}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              {generate.isPending ? "Regenerating…" : "Regenerate"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {unconfigured && (
+        <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
+          The Guru isn't configured yet — an administrator needs to add an LLM API key before
+          reports can be generated.
+        </p>
+      )}
+      {alreadyGenerating && (
+        <p className="mt-3 text-sm text-flag">Already generating — check back shortly.</p>
+      )}
+      {budgetExhausted && (
+        <p className="mt-3 rounded-md bg-accent-subtle p-3 text-sm text-accent">
+          Daily AI limit reached — resets tomorrow.
+        </p>
+      )}
+      {generateFailed && (
+        <p className="mt-3 text-sm text-loss">Could not generate the rotation view — please try again.</p>
+      )}
+
+      {rotationQuery.isPending && <p className="mt-3 text-sm text-muted">Loading…</p>}
+      {rotationQuery.isError && (
+        <p className="mt-3 text-sm text-loss">Failed to load the rotation view.</p>
+      )}
+
+      {rotationQuery.isSuccess && !latest && (
+        <div className="mt-4">
+          <p className="text-sm text-muted">
+            Get the Guru's read on where to rotate money next across your groups.
+          </p>
+          <button
+            type="button"
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            className="mt-3 rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            {generate.isPending ? "Generating…" : "Generate rotation view"}
+          </button>
+          <p className="mt-3 text-xs text-muted">The Guru is not regulated financial advice.</p>
+        </div>
+      )}
+
+      {latest && (
+        <div className="mt-4 space-y-4">
+          <p className="rounded-md bg-accent-subtle p-3 text-sm text-accent">
+            {latest.payload.market_view}
+          </p>
+
+          <ul className="flex flex-wrap gap-2">
+            {latest.payload.groups.map((g) => (
+              <li
+                key={g.name}
+                className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: colorForGroupName(g.name) }}
+                />
+                <span className="text-text">{g.name}</span>
+                <span className={`rounded-full px-1.5 py-0.5 font-medium ${SIGNAL_TONE[g.signal]}`}>
+                  {g.signal.toUpperCase()}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">
+              Suggested rotations
+            </p>
+            <ul className="mt-2 space-y-2">
+              {latest.payload.rotations.map((r: RotationItem, i: number) => (
+                <li key={`${r.from_group}-${r.to_group}-${i}`} className="text-sm">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: colorForGroupName(r.from_group) }}
+                    />
+                    <span className="font-medium text-text">{r.from_group}</span>
+                    <span className="text-muted">→</span>
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: colorForGroupName(r.to_group) }}
+                    />
+                    <span className="font-medium text-text">{r.to_group}</span>
+                    <span className="rounded-full border border-border px-1.5 py-0.5 text-xs text-muted">
+                      {r.conviction.toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-muted">{r.rationale}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {latest.payload.caveats.length > 0 && (
+            <ul className="space-y-1 text-xs text-muted">
+              {latest.payload.caveats.map((c, i) => (
+                <li key={`${c}-${i}`} className="flex items-start gap-1.5">
+                  <span aria-hidden="true" className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-flag" />
+                  {c}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="text-xs text-muted">{latest.payload.disclaimer}</p>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -438,6 +621,8 @@ export default function SectorsPage() {
           </div>
         )}
       </section>
+
+      <RotationPanel groups={groups} />
     </div>
   );
 }

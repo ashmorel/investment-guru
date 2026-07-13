@@ -14,6 +14,7 @@ import type {
   NewsSummary,
   OrsoFundOut,
   RefreshNewsResult,
+  RotationReport,
   SeedGroupsResult,
   StockNews,
   TrendRange,
@@ -261,4 +262,14 @@ export function getGroupExposure(portfolioId?: number | null): Promise<GroupExpo
 
 export function getGroupTrend(range: TrendRange = "30d"): Promise<GroupTrend> {
   return apiFetch<GroupTrend>(`/api/groups/trend?range=${range}`);
+}
+
+// --- Sector-rotation advice (Guru) -------------------------------------------
+
+export function getRotation(): Promise<RotationReport | null> {
+  return apiFetch<RotationReport | null>("/api/groups/rotation");
+}
+
+export function generateRotation(): Promise<RotationReport> {
+  return apiFetch<RotationReport>("/api/groups/rotation", { method: "POST" });
 }
