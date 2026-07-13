@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.core.security import hash_password
 from app.models import OrsoAllocation, OrsoFund, User
 from app.seed_orso_lsrbs import LSRBS_FUNDS, seed_lsrbs_funds
+from app.services.orso.ingest import build_draft
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -53,7 +54,28 @@ async def test_updates_stale_metadata_and_unarchives(db_session):
         select(OrsoFund).where(OrsoFund.user_id == user.id,
                                OrsoFund.code == "IEUI"))).scalar_one()
     assert fund.currency == "EUR" and fund.archived is False
-    assert fund.name == "iShares Europe Index Fund (IE)"
+    assert fund.name == "iShares Europe Index Fund (IE) Inst Acc EUR"
+
+
+async def test_seeded_fund_matches_statement_shaped_name_in_build_draft(db_session):
+    # The user's real statement uses the full name WITH share-class suffix
+    # (e.g. "... Inst Acc USD"), not the base factsheet name — build_draft
+    # must match it via exact normalized-name equality against the seeded
+    # catalogue, or every fund shows unmatched on real-world ingest.
+    user = await _make_user(db_session, "lsrbs5@test.dev")
+    await seed_lsrbs_funds(db_session, user.id)
+
+    statement_name = "iShares Developed World Index Fund (IE) Inst Acc USD"
+    parsed_rows = [{
+        "fund_code": "", "fund_name": statement_name,
+        "units": "100", "value": "1000", "contribution_pct": "100",
+    }]
+    draft = await build_draft(db_session, user.id, parsed_rows, source="csv")
+
+    assert len(draft.rows) == 1
+    row = draft.rows[0]
+    assert row.matched_fund_id is not None
+    assert "unmatched" not in row.flags
 
 
 async def test_archives_zero_alloc_legacy_wmfs_but_keeps_held(db_session):

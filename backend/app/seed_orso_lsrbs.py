@@ -24,25 +24,36 @@ from app.core.db import SessionLocal
 from app.models import OrsoAllocation, OrsoFund, User
 
 # (code, name, asset_class, risk_rating [INFERRED — verify], currency)
+# Names for funds present on the user's HSBC LSRBS statement are the FULL
+# statement name (base name + share-class suffix, e.g. "... Inst Acc USD")
+# so ingest.build_draft's exact normalized-name match succeeds against real
+# statement rows. Funds not on that statement keep their base factsheet name.
 LSRBS_FUNDS = [
     ("HGMF", "HSBC Global Money Fund", "cash", 1, "HKD"),
-    ("WEMD", "Wellington Opportunistic Emerging Markets Debt Fund", "bond", 4, "USD"),
+    ("WEMD", "Wellington Opportunistic Emerging Markets Debt Fund USD S Acc U",
+     "bond", 4, "USD"),
     ("CGCB", "Capital Group Global Corporate Bond Fund", "bond", 3, "USD"),
     ("JPAB", "JP Morgan Aggregate Bond Fund", "bond", 3, "USD"),
     ("SCST", "Schroder Capital Stable Fund", "multi_asset", 2, "HKD"),
     ("SSTG", "Schroder Stable Growth Fund", "multi_asset", 3, "HKD"),
-    ("SBAL", "Schroder Balanced Investment Fund", "multi_asset", 4, "HKD"),
-    ("SGRO", "Schroder Growth Fund", "multi_asset", 5, "HKD"),
+    ("SBAL", "Schroder Balanced Investment Fund C Accumulation HKD",
+     "multi_asset", 4, "HKD"),
+    ("SGRO", "Schroder Growth Fund C Accumulation HKD", "multi_asset", 5, "HKD"),
     ("LGDU", "L&G Diversified USD Fund", "multi_asset", 4, "USD"),
-    ("IDRE", "iShares Developed Real Estate Index Fund (IE)", "real_estate", 5, "USD"),
-    ("IDWI", "iShares Developed World Index Fund (IE)", "equity", 5, "USD"),
-    ("IEUI", "iShares Europe Index Fund (IE)", "equity", 5, "EUR"),
-    ("MSEM", "Morgan Stanley Investment Funds - Emerging Markets Equity Fund", "equity", 6, "USD"),
-    ("WASO", "Wellington Asian Opportunities Fund", "equity", 6, "USD"),
-    ("IUSI", "iShares US Index Fund (IE)", "equity", 5, "USD"),
-    ("IJPI", "iShares Japan Index Fund (IE)", "equity", 5, "USD"),
-    ("HSIF", "Hang Seng Index Fund", "equity", 6, "HKD"),
-    ("ACHE", "Allianz China Equity", "equity", 6, "HKD"),
+    ("IDRE", "iShares Developed Real Estate Index Fund (IE) Inst Acc USD",
+     "real_estate", 5, "USD"),
+    ("IDWI", "iShares Developed World Index Fund (IE) Inst Acc USD",
+     "equity", 5, "USD"),
+    ("IEUI", "iShares Europe Index Fund (IE) Inst Acc EUR", "equity", 5, "EUR"),
+    ("MSEM", "Morgan Stanley Investment Funds - Emerging Markets Equity Fund",
+     "equity", 6, "USD"),
+    ("WASO", "Wellington Asian Opportunities Fund USD S Acc U", "equity", 6, "USD"),
+    ("IUSI", "iShares US Index Fund (IE) USD Institutional Accumulating Class",
+     "equity", 5, "USD"),
+    ("IJPI", "iShares Japan Index Fund (IE) USD Institutional Accumulating Class",
+     "equity", 5, "USD"),
+    ("HSIF", "Hang Seng Index Fund Income Unit - A", "equity", 6, "HKD"),
+    ("ACHE", "Allianz China Equity - WT - HKD", "equity", 6, "HKD"),
 ]
 
 # Legacy WMFS starter-fund codes (app.seed.STARTER_FUNDS) — wrong scheme for
