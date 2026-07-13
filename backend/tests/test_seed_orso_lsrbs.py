@@ -27,10 +27,11 @@ async def test_seeds_all_lsrbs_funds_with_currency_and_class(db_session):
     funds = (await db_session.execute(
         select(OrsoFund).where(OrsoFund.user_id == user.id))).scalars().all()
     by_code = {f.code: f for f in funds}
-    # the EUR fund proves multi-currency seeding
-    assert by_code["IEUI"].currency == "EUR"
+    # LSRBS scheme reports member balances/prices in HKD → all funds modelled in HKD
+    assert by_code["IEUI"].currency == "HKD"
     assert by_code["HGMF"].currency == "HKD" and by_code["HGMF"].asset_class == "cash"
-    assert by_code["IDWI"].currency == "USD" and by_code["IDWI"].asset_class == "equity"
+    assert by_code["IDWI"].currency == "HKD" and by_code["IDWI"].asset_class == "equity"
+    assert all(f.currency == "HKD" for f in funds)
     assert all(1 <= f.risk_rating <= 7 for f in funds)
 
 
@@ -53,7 +54,7 @@ async def test_updates_stale_metadata_and_unarchives(db_session):
     fund = (await db_session.execute(
         select(OrsoFund).where(OrsoFund.user_id == user.id,
                                OrsoFund.code == "IEUI"))).scalar_one()
-    assert fund.currency == "EUR" and fund.archived is False
+    assert fund.currency == "HKD" and fund.archived is False
     assert fund.name == "iShares Europe Index Fund (IE) Inst Acc EUR"
 
 
