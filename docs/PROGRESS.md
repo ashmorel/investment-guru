@@ -414,6 +414,20 @@ colours mapped group name→id (Ungrouped grey); 429/409/error states reuse the 
 Backend rotation tests (schema/context/service/API, full suite **372**); frontend **129** (incl. vitest-axe).
 Live: no migration (head 0012), `POST`/`GET /api/groups/rotation` 401 (mounted), `/sectors` 200.
 
+## Post-programme maintenance (2026-07-13)
+
+Deferred-minors cleanup sweep (commit `1bd04ad`, no migration, live): (1) group snapshot
+`as_of` now uses the app timezone via `exposure.local_today()` (guru_timezone, consistent with the
+daily digest) across the scheduled job, the opportunistic write, and the trend cutoff — not raw UTC;
+(2) `TrendChart` series `key` is `group_id` not `name`, so a user group literally named "Ungrouped"
+can't collide with the null bucket; (3) dropped a redundant `RotationItem` annotation in `SectorsPage`.
+Backend 372 / frontend 129 green.
+
+**Open (uncommitted, optional — none blocking):** automated DB backups (recommended before real data
+lands), custom domain, Vercel↔Railway shared-secret header. Remaining code-minors are low-value (per-group
+N+1 in `build_rotation_context`; failed-rotation LLM cost not recorded — mirrors ORSO). Operator steps:
+import real Yahoo CSV, first ORSO ingest, optional OpenAI/Gemini key in `/admin`.
+
 ## How to run locally
 ```bash
 docker compose up -d db                      # Postgres on :5433
