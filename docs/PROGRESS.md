@@ -445,6 +445,14 @@ override → 11 updated); (2) added an editable native **Price** column to the i
 and display in HKD (value-only CSV path unchanged). Backend **382** / frontend **132** green. Operator:
 set ORSO display currency = HKD on the ORSO page.
 
+**Correction — LSRBS funds modelled in HKD (2026-07-13, commit `4b342dc`, re-seeded prod):** the LSRBS
+member statement reports every balance AND unit price in HKD, so treating the funds as their USD/EUR
+underlying class made the HKD overview FX-convert an already-HKD figure (~7.84× too large — e.g. IDWI
+showed HKD 7,883,571 instead of 1,005,857). All LSRBS funds are now `currency="HKD"` in
+`seed_orso_lsrbs.py` (re-seeded prod → 11 updated), so the manual HKD-per-unit price needs no conversion.
+This supersedes the "native price" framing above for LSRBS: the member-facing figures the app ingests are
+HKD. (Display currency must be HKD, which it is.)
+
 **Open (uncommitted, optional — none blocking):** automated DB backups (recommended before real data
 lands), custom domain, Vercel↔Railway shared-secret header. Remaining code-minors are low-value (per-group
 N+1 in `build_rotation_context`; failed-rotation LLM cost not recorded — mirrors ORSO). Operator steps:
