@@ -435,6 +435,16 @@ widen, metadata-only; **downgrade fails once >16-char codes exist** — cleanup 
 recomputes parse-flags as you edit, and array-shaped 422 details now render a readable reason. Backend
 **381** / frontend **131** green; head now **0013**.
 
+**ORSO LSRBS matching + native price (2026-07-13, no migration, live — commits `19014e1`/`26fe52b`):**
+the real LSRBS statement uses full fund names WITH share-class suffixes (e.g. "iShares Developed World
+Index Fund (IE) Inst Acc USD"), but `seed_orso_lsrbs.py` stored base names, so exact-normalized matching
+missed. Fix: (1) updated the 11 held funds' catalogue names to the exact statement wording (codes/currency
+unchanged) + re-seeded prod (`railway run` against the Postgres public proxy with an `INITIAL_USER_EMAIL`
+override → 11 updated); (2) added an editable native **Price** column to the ingest review
+(`valueFromUnitsPrice` → value = units × price), so USD/EUR/HKD-priced funds import in their own currency
+and display in HKD (value-only CSV path unchanged). Backend **382** / frontend **132** green. Operator:
+set ORSO display currency = HKD on the ORSO page.
+
 **Open (uncommitted, optional — none blocking):** automated DB backups (recommended before real data
 lands), custom domain, Vercel↔Railway shared-secret header. Remaining code-minors are low-value (per-group
 N+1 in `build_rotation_context`; failed-rotation LLM cost not recorded — mirrors ORSO). Operator steps:
