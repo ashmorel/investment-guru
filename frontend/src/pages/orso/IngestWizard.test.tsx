@@ -211,6 +211,57 @@ describe("IngestWizard", () => {
     expect(body.allocations[0]).toMatchObject({ new_fund_code: "HSITF", fund_id: null });
   });
 
+  it("entering native units + price computes value = units × price and sends it, keeping a matched USD fund's currency", async () => {
+    let posted: {
+      new_funds: unknown[];
+      allocations: { fund_id: number | null; units: string; contribution_pct: string; price: { market_value: string; as_of: string } | null }[];
+    } | null = null;
+    const usdMatchedDraft = {
+      rows: [
+        {
+          parsed_code: "IUSI",
+          parsed_name: "iShares US Index Fund (IE) USD Institutional Accumulating Class",
+          matched_fund_id: 7,
+          proposed_fund: null,
+          units: null,
+          value: null,
+          currency: "USD",
+          contribution_pct: "100",
+          implied_price: null,
+          flags: [],
+        },
+      ],
+      warnings: [],
+      source: "csv",
+    };
+    mockApi({ onIngest: () => jsonResponse(usdMatchedDraft), onApply: (body) => (posted = body as typeof posted) });
+    const user = userEvent.setup();
+    renderWizard();
+
+    await uploadDraft(user);
+    await screen.findByText("iShares US Index Fund (IE) USD Institutional Accumulating Class");
+
+    const unitsInput = screen.getByLabelText(/IUSI units/i);
+    await user.type(unitsInput, "500");
+    const priceInput = screen.getByLabelText(/IUSI price/i);
+    await user.type(priceInput, "150.5");
+
+    const valueInput = screen.getByLabelText(/IUSI value/i) as HTMLInputElement;
+    expect(valueInput.value).toBe("75250.00"); // 500 x 150.5
+
+    // Currency stays USD — the matched fund's native currency, untouched by
+    // the price/units edit.
+    expect((screen.getByLabelText(/IUSI currency/i) as HTMLInputElement).value).toBe("USD");
+
+    await user.click(screen.getByRole("button", { name: /confirm & save/i }));
+
+    await waitFor(() => expect(posted).not.toBeNull());
+    const body = posted!;
+    const iusi = body.allocations.find((a) => a.fund_id === 7);
+    expect(iusi?.units).toBe("500");
+    expect(iusi?.price).toEqual({ market_value: "75250.00", as_of: expect.any(String) });
+  });
+
   it("renders a specific message when Confirm fails with a FastAPI validation (array detail) 422", async () => {
     mockApi({
       onApply: () => {

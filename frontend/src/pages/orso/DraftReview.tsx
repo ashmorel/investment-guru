@@ -1,4 +1,12 @@
-import { flagLabel, formatPct, impliedPrice, liveFlags, pctSum, type EditableRow } from "./draftModel";
+import {
+  flagLabel,
+  formatPct,
+  impliedPrice,
+  liveFlags,
+  pctSum,
+  valueFromUnitsPrice,
+  type EditableRow,
+} from "./draftModel";
 
 export default function DraftReview({
   rows,
@@ -19,6 +27,21 @@ export default function DraftReview({
 }) {
   function updateRow(key: string, patch: Partial<EditableRow>) {
     onRowsChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  // Native price is the natural entry for a statement (units + per-unit
+  // price in the fund's own currency) — editing either recomputes `value`,
+  // which stays the field the apply request sends. If a price hasn't been
+  // entered yet, units alone don't imply a value, so leave it untouched
+  // (a value-only CSV/manual-entry path still works unchanged).
+  function updateUnits(row: EditableRow, units: string) {
+    const value = row.price.trim() ? (valueFromUnitsPrice(units, row.price) ?? row.value) : row.value;
+    updateRow(row.key, { units, value });
+  }
+
+  function updatePrice(row: EditableRow, price: string) {
+    const value = valueFromUnitsPrice(row.units, price) ?? row.value;
+    updateRow(row.key, { price, value });
   }
 
   const sum = pctSum(rows);
@@ -46,6 +69,7 @@ export default function DraftReview({
               <th className="p-2 font-medium">Fund</th>
               <th className="p-2 font-medium">Code</th>
               <th className="p-2 text-right font-medium">Units</th>
+              <th className="p-2 text-right font-medium">Price</th>
               <th className="p-2 text-right font-medium">Value</th>
               <th className="p-2 text-right font-medium">Contribution %</th>
               <th className="p-2 font-medium">Currency</th>
@@ -97,7 +121,15 @@ export default function DraftReview({
                   <input
                     aria-label={`${row.displayCode} units`}
                     value={row.units}
-                    onChange={(e) => updateRow(row.key, { units: e.target.value })}
+                    onChange={(e) => updateUnits(row, e.target.value)}
+                    className="w-24 rounded-md border border-border px-2 py-1 text-right text-sm text-text"
+                  />
+                </td>
+                <td className="p-2 text-right">
+                  <input
+                    aria-label={`${row.displayCode} price`}
+                    value={row.price}
+                    onChange={(e) => updatePrice(row, e.target.value)}
                     className="w-24 rounded-md border border-border px-2 py-1 text-right text-sm text-text"
                   />
                 </td>
@@ -108,6 +140,11 @@ export default function DraftReview({
                     onChange={(e) => updateRow(row.key, { value: e.target.value })}
                     className="w-28 rounded-md border border-border px-2 py-1 text-right text-sm text-text"
                   />
+                  {row.price.trim() && (
+                    <p className="mt-1 text-[10px] text-muted">
+                      = {row.units.trim() || "0"} × {row.price} ({row.currency})
+                    </p>
+                  )}
                 </td>
                 <td className="p-2 text-right">
                   <input

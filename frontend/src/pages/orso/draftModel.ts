@@ -12,6 +12,10 @@ export interface EditableRow {
   displayCode: string;
   displayName: string;
   units: string;
+  /** Native unit price (the statement's per-unit price in the fund's own
+   * currency). Editing this — or units, when a price is set — recomputes
+   * `value` below, which stays the field the apply request actually sends. */
+  price: string;
   value: string;
   contributionPct: string;
   currency: string;
@@ -26,6 +30,7 @@ export function draftRowToEditable(row: DraftRow, seq: number): EditableRow {
     displayCode: row.matched_fund_id != null ? row.parsed_code : (row.proposed_fund?.code ?? row.parsed_code),
     displayName: row.parsed_name ?? row.proposed_fund?.name ?? row.parsed_code,
     units: row.units ?? "",
+    price: row.implied_price ?? "",
     value: row.value ?? "",
     contributionPct: row.contribution_pct ?? "",
     currency: row.currency,
@@ -44,6 +49,7 @@ export function fundToEditableRow(
     displayCode: fund.code,
     displayName: fund.name,
     units: "",
+    price: "",
     value: "",
     contributionPct: "",
     currency: fund.currency,
@@ -56,6 +62,16 @@ export function impliedPrice(units: string, value: string): string | null {
   const v = Number(value);
   if (!units.trim() || !value.trim() || !Number.isFinite(u) || !Number.isFinite(v) || u === 0) return null;
   return (v / u).toFixed(4);
+}
+
+/** Native-price entry: value = units × price, as a plain decimal string
+ * (2dp — value is a money amount). Returns null when either input is blank
+ * or non-numeric, so callers can fall back to leaving `value` untouched. */
+export function valueFromUnitsPrice(units: string, price: string): string | null {
+  const u = Number(units);
+  const p = Number(price);
+  if (!units.trim() || !price.trim() || !Number.isFinite(u) || !Number.isFinite(p)) return null;
+  return (u * p).toFixed(2);
 }
 
 /** Recompute the parse-warning flags from the row's CURRENT (possibly edited)
