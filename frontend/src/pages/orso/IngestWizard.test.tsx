@@ -151,6 +151,95 @@ describe("IngestWizard", () => {
     expect(await screen.findByText(/allocation updated/i)).toBeInTheDocument();
   });
 
+  it("editing a new-fund row's code and value clears the stale flag and Confirm sends the edited code", async () => {
+    let posted: {
+      new_funds: { code: string; name: string; currency: string; asset_class?: string; risk_rating?: number }[];
+      allocations: { fund_id: number | null; new_fund_code: string | null; units: string; contribution_pct: string; price: { market_value: string; as_of: string } | null }[];
+    } | null = null;
+    const longNameDraft = {
+      rows: [
+        {
+          parsed_code: "HANG SENG INDEX TRACKING FUND CLASS A ACCUMULATION",
+          parsed_name: "Hang Seng Index Tracking Fund Class A Accumulation",
+          matched_fund_id: null,
+          proposed_fund: {
+            code: "HSITFCAA",
+            name: "Hang Seng Index Tracking Fund Class A Accumulation",
+            currency: "HKD",
+            asset_class: "unknown",
+            risk_rating: 4,
+          },
+          units: "10",
+          value: "not-a-number",
+          currency: "HKD",
+          contribution_pct: "100",
+          implied_price: null,
+          flags: ["unparseable_value"],
+        },
+      ],
+      warnings: [],
+      source: "csv",
+    };
+    mockApi({ onIngest: () => jsonResponse(longNameDraft), onApply: (body) => (posted = body as typeof posted) });
+    const user = userEvent.setup();
+    renderWizard();
+
+    await uploadDraft(user);
+    await screen.findByText("Hang Seng Index Tracking Fund Class A Accumulation");
+
+    // The stale server flag is shown initially.
+    expect(screen.getByText(/unparseable value/i)).toBeInTheDocument();
+
+    // Fix the value — the flag should clear because it's recomputed live.
+    const valueInput = screen.getByLabelText(/HSITFCAA value/i);
+    await user.clear(valueInput);
+    await user.type(valueInput, "1000");
+    expect(screen.queryByText(/unparseable value/i)).not.toBeInTheDocument();
+
+    // Edit the auto-prefilled code to something shorter/custom.
+    const codeInput = screen.getByLabelText(/Hang Seng Index Tracking Fund Class A Accumulation code/i);
+    await user.clear(codeInput);
+    await user.type(codeInput, "hsitf");
+
+    await user.click(screen.getByRole("button", { name: /confirm & save/i }));
+
+    await waitFor(() => expect(posted).not.toBeNull());
+    const body = posted!;
+    expect(body.new_funds).toEqual([
+      { code: "HSITF", name: "Hang Seng Index Tracking Fund Class A Accumulation", currency: "HKD", asset_class: "unknown", risk_rating: 4 },
+    ]);
+    expect(body.allocations[0]).toMatchObject({ new_fund_code: "HSITF", fund_id: null });
+  });
+
+  it("renders a specific message when Confirm fails with a FastAPI validation (array detail) 422", async () => {
+    mockApi({
+      onApply: () => {
+        throw new Error("unused");
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/orso/ingest/csv") && method === "POST") return jsonResponse(DRAFT);
+      if (url.includes("/api/orso/allocation/apply") && method === "POST") {
+        return jsonResponse(
+          { detail: [{ loc: ["body", "new_funds", 0, "code"], msg: "String should have at most 32 characters", type: "string_too_long" }] },
+          422,
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url} ${method}`);
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    await uploadDraft(user);
+    await screen.findByText("Hong Kong Equity Fund");
+
+    await user.click(screen.getByRole("button", { name: /confirm & save/i }));
+
+    expect(await screen.findByText(/could not save: code string should have at most 32 characters/i)).toBeInTheDocument();
+  });
+
   it("surfaces a friendly message when the CSV is missing required headers (422)", async () => {
     mockApi({
       onIngest: () => jsonResponse({ detail: "missing_headers:['units']" }, 422),

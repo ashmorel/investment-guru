@@ -16,34 +16,39 @@ function todayIso(): string {
 function buildApplyRequest(rows: EditableRow[]): ApplyRequest {
   const newFunds = new Map<string, ApplyNewFund>();
 
-  const allocations: ApplyItem[] = rows.map((row) => {
+  const allocations: ApplyItem[] = [];
+  for (const row of rows) {
     let fund_id: number | null = null;
     let new_fund_code: string | null = null;
 
     if (row.matchedFundId != null) {
       fund_id = row.matchedFundId;
-    } else if (row.proposed) {
-      new_fund_code = row.proposed.code;
-      if (!newFunds.has(row.proposed.code)) {
-        newFunds.set(row.proposed.code, {
-          code: row.proposed.code,
-          name: row.proposed.name,
-          currency: row.currency || row.proposed.currency,
-          asset_class: row.proposed.asset_class,
-          risk_rating: row.proposed.risk_rating,
+    } else {
+      // Unmatched (new-fund) row: use the user-edited code, not the stale
+      // (possibly >16-char, name-as-code) value the server originally proposed.
+      const code = row.displayCode.trim();
+      if (!code) continue; // guard: can't apply a new fund with no code
+      new_fund_code = code;
+      if (!newFunds.has(code)) {
+        newFunds.set(code, {
+          code,
+          name: row.displayName,
+          currency: row.currency || "HKD",
+          asset_class: row.proposed?.asset_class ?? "unknown",
+          risk_rating: row.proposed?.risk_rating ?? 4,
         });
       }
     }
 
     const value = row.value.trim();
-    return {
+    allocations.push({
       fund_id,
       new_fund_code,
       units: row.units.trim() || "0",
       contribution_pct: row.contributionPct.trim() || "0",
       price: value ? { market_value: value, as_of: todayIso() } : null,
-    };
-  });
+    });
+  }
 
   return { new_funds: Array.from(newFunds.values()), allocations };
 }
@@ -244,10 +249,24 @@ export default function IngestWizard() {
   );
 }
 
+// FastAPI validation errors (422) render `detail` as a list of
+// {loc, msg, type} objects rather than a string — surface the first one so
+// the real reason shows instead of a generic fallback.
+function validationErrorMessage(detail: unknown[]): string | null {
+  const first = detail[0] as { loc?: unknown[]; msg?: string } | undefined;
+  if (!first || typeof first.msg !== "string") return null;
+  const field = Array.isArray(first.loc) ? first.loc[first.loc.length - 1] : undefined;
+  const fieldLabel = typeof field === "string" || typeof field === "number" ? `${field} ` : "";
+  return `Could not save: ${fieldLabel}${first.msg}.`;
+}
+
 function applyErrorMessage(error: unknown): string {
   if (!(error instanceof ApiError)) return "Could not save the allocation — please try again.";
   try {
-    const body = JSON.parse(error.message) as { detail?: string };
+    const body = JSON.parse(error.message) as { detail?: string | unknown[] };
+    if (Array.isArray(body.detail)) {
+      return validationErrorMessage(body.detail) ?? "Could not save the allocation — please review the rows and try again.";
+    }
     if (body.detail) return `Could not save: ${body.detail.replace(/_/g, " ")}.`;
   } catch {
     /* fall through */

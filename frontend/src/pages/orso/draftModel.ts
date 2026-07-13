@@ -58,6 +58,21 @@ export function impliedPrice(units: string, value: string): string | null {
   return (v / u).toFixed(4);
 }
 
+/** Recompute the parse-warning flags from the row's CURRENT (possibly edited)
+ * values instead of trusting the stale server-side `flags`, so a flag clears
+ * once the user fixes the underlying value. `unmatched` isn't derivable from
+ * the edited fields — it's carried over from whatever the server decided. */
+export function liveFlags(row: EditableRow): string[] {
+  const flags: string[] = [];
+  if (row.units.trim() && !Number.isFinite(Number(row.units))) flags.push("unparseable_units");
+  if (row.value.trim() && !Number.isFinite(Number(row.value))) flags.push("unparseable_value");
+  if (row.contributionPct.trim() && !Number.isFinite(Number(row.contributionPct))) {
+    flags.push("unparseable_pct");
+  }
+  if (row.flags.includes("unmatched")) flags.push("unmatched");
+  return flags;
+}
+
 export function pctSum(rows: EditableRow[]): number {
   return rows.reduce((sum, r) => sum + (Number(r.contributionPct) || 0), 0);
 }

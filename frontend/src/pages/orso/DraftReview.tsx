@@ -1,4 +1,4 @@
-import { flagLabel, formatPct, impliedPrice, pctSum, type EditableRow } from "./draftModel";
+import { flagLabel, formatPct, impliedPrice, liveFlags, pctSum, type EditableRow } from "./draftModel";
 
 export default function DraftReview({
   rows,
@@ -44,6 +44,7 @@ export default function DraftReview({
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="p-2 font-medium">Fund</th>
+              <th className="p-2 font-medium">Code</th>
               <th className="p-2 text-right font-medium">Units</th>
               <th className="p-2 text-right font-medium">Value</th>
               <th className="p-2 text-right font-medium">Contribution %</th>
@@ -67,10 +68,9 @@ export default function DraftReview({
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted">{row.displayCode}</p>
-                  {row.flags.length > 0 && (
+                  {liveFlags(row).length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {row.flags.map((f) => (
+                      {liveFlags(row).map((f) => (
                         <span
                           key={f}
                           className="rounded-full bg-loss/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-loss"
@@ -79,6 +79,18 @@ export default function DraftReview({
                         </span>
                       ))}
                     </div>
+                  )}
+                </td>
+                <td className="p-2">
+                  {row.matchedFundId != null ? (
+                    <span className="text-sm text-muted">{row.displayCode}</span>
+                  ) : (
+                    <input
+                      aria-label={`${row.displayName} code`}
+                      value={row.displayCode}
+                      onChange={(e) => updateRow(row.key, { displayCode: e.target.value.toUpperCase() })}
+                      className="w-32 rounded-md border border-border px-2 py-1 text-sm text-text"
+                    />
                   )}
                 </td>
                 <td className="p-2 text-right">
