@@ -423,6 +423,18 @@ daily digest) across the scheduled job, the opportunistic write, and the trend c
 can't collide with the null bucket; (3) dropped a redundant `RotationItem` annotation in `SectorsPage`.
 Backend 372 / frontend 129 green.
 
+**ORSO ingest fix (2026-07-13, migration `0013`, live — commits `0224ab4`/`818564c`):** the real HSBC
+statement puts full fund NAMES in the `fund_code` column (→ ~60-char codes), which failed
+`ApplyNewFund.code` (max_length 16) with a 422 the frontend rendered as a generic error. Fix:
+(1) `ingest._dec` now parses comma/`%`/currency-formatted numbers — but validates thousands-grouping
+(`_THOUSANDS_RE`) so a malformed comma like `"9,97"`/`"1,2,3"` returns None (unparseable) rather than a
+silently-wrong Decimal — a Critical caught in review; (2) `ingest._derive_code` builds a short (≤16),
+deduped, editable fund code from the name; (3) migration `0013` widens `orso_funds.code` 16→32 (VARCHAR
+widen, metadata-only; **downgrade fails once >16-char codes exist** — cleanup first), `ApplyNewFund`/
+`FundCreate` schemas bumped to 32; (4) frontend: editable Code column on new-fund rows, `liveFlags`
+recomputes parse-flags as you edit, and array-shaped 422 details now render a readable reason. Backend
+**381** / frontend **131** green; head now **0013**.
+
 **Open (uncommitted, optional — none blocking):** automated DB backups (recommended before real data
 lands), custom domain, Vercel↔Railway shared-secret header. Remaining code-minors are low-value (per-group
 N+1 in `build_rotation_context`; failed-rotation LLM cost not recorded — mirrors ORSO). Operator steps:

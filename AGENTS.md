@@ -35,7 +35,7 @@ output (`client.messages.parse`); chat is the only free-text path.
 
 ## Stack & layout
 
-- `backend/` — FastAPI + SQLAlchemy 2 async + Alembic (head **0012**) + Postgres; APScheduler in-process
+- `backend/` — FastAPI + SQLAlchemy 2 async + Alembic (head **0013**) + Postgres; APScheduler in-process
   (single replica = the scheduler). `app/services/{market_data,signals,guru,orso}/` behind provider
   abstractions; `app/api/*` routers. LLM: `app/services/guru/llm/` (Anthropic/OpenAI/Google adapters +
   `factory.build_provider`; FakeLLMProvider for tests). Provider + advice/scan models + key come from the
