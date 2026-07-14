@@ -11,5 +11,6 @@ dist/
 *.local
 .DS_Store
 .superpowers/
+.worktrees/
 *.egg-info/
 .vercel
