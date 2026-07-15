@@ -203,3 +203,57 @@ class DecisionBriefPayload(BaseModel):
         if len(news_refs) != len(set(news_refs)):
             raise ValueError("material news evidence references must be unique")
         return self
+
+
+# --- Decision brief DRAFT contract ------------------------------------------
+#
+# The model is asked to produce this lean draft rather than DecisionBriefPayload
+# directly. It carries only stable identifiers (evidence_ref / symbol) for facts
+# the app already knows (news headline/source/url, candidate name/market/type,
+# data_as_of) — the backend joins those in from the grounding context. This
+# means the model can never mis-transcribe a fact, and validation only has to
+# check identifiers exist, not that strings were reproduced verbatim.
+
+
+class DecisionNewsDraftItem(BaseModel):
+    evidence_ref: str
+    importance: Literal["material", "watch", "context"]
+    impact: str
+
+
+class CandidateDraftItem(BaseModel):
+    symbol: str
+    action: Literal["consider"]
+    conviction: Literal["low", "med", "high"]
+    why_surfaced: str
+    portfolio_fit: str
+    principal_risk: str
+    watch_next: list[str]
+    evidence_refs: list[str]
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def has_evidence(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("candidate must cite at least one evidence reference")
+        return value
+
+
+class DecisionBriefDraft(BaseModel):
+    summary: str
+    holdings: list[HoldingDecision]
+    material_news: list[DecisionNewsDraftItem]
+    portfolio_observations: list[str]
+    candidates: list[CandidateDraftItem] = Field(max_length=5)
+    unavailable_inputs: list[str]
+    disclaimer: str
+
+    @model_validator(mode="after")
+    def unique_symbols_and_news_refs(self) -> Self:
+        candidate_symbols = [candidate.symbol for candidate in self.candidates]
+        if len(candidate_symbols) != len(set(candidate_symbols)):
+            raise ValueError("candidate symbols must be unique")
+        news_refs = [item.evidence_ref for item in self.material_news]
+        if len(news_refs) != len(set(news_refs)):
+            raise ValueError("material news evidence references must be unique")
+        return self

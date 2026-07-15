@@ -12,8 +12,12 @@ from app.services.guru.context import build_context
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
 from app.services.guru.schemas import (
+    CandidateIdea,
+    DecisionBriefDraft,
     DecisionBriefPayload,
+    DecisionNewsItem,
     DigestPayload,
+    HoldingDecision,
     NewsSummaryPayload,
     OrsoAdvicePayload,
     ReviewPayload,
@@ -46,31 +50,43 @@ _NEWS_INSTRUCTION = (
 
 
 _DECISION_INSTRUCTION = (
-    "Produce a decision brief covering EVERY holding in the supplied context, including "
-    "holdings whose inputs are incomplete (use action=data_incomplete for those). Reason "
-    "ONLY from the supplied context and cite only its stable evidence references. Do not "
-    "use model-memory facts or invent figures. Keep all recommendations directional: do "
-    "not state amounts, prices, share counts, target prices, or specific trade instructions. "
-    "Distinguish missing data from a hold verdict. Always include the standard disclaimer "
-    "that this is general educational information, not regulated financial advice."
+    "Produce a decision brief draft covering EVERY holding in the supplied context, "
+    "including holdings whose inputs are incomplete (use action=data_incomplete for "
+    "those). Reason ONLY from the supplied context and cite only its stable evidence "
+    "references. Do not use model-memory facts or invent figures. For material_news, "
+    "reference each item ONLY by its evidence_ref — do not output a headline, source, "
+    "or url, the app fills those in from the context. For candidates, reference each "
+    "one ONLY by its symbol — do not output a name, market, or instrument_type, the "
+    "app fills those in from the context. Do NOT output a data_as_of timestamp — the "
+    "app sets it from the context. Keep all recommendations directional: do not state "
+    "amounts, prices, share counts, target prices, or specific trade instructions. "
+    "Distinguish missing data from a hold verdict. Always include the standard "
+    "disclaimer that this is general educational information, not regulated financial "
+    "advice."
 )
 
 
 def _decision_invalid_refs(
-    payload: DecisionBriefPayload, ctx: dict
+    draft: DecisionBriefDraft, ctx: dict
 ) -> tuple[set[str], set[str]]:
+    """Validate only stable identifiers the model can't reliably fabricate.
+
+    The draft carries no free-text facts to check for verbatim reproduction
+    (headline/source/url/name/market/instrument_type/data_as_of) — those are
+    joined in from the context after validation, so the model literally cannot
+    invent them.
+    """
     held_symbols = {row["symbol"] for row in ctx["holdings"]}
     context_candidates = {row["symbol"]: row for row in ctx["candidates"]}
     context_news = {
         row["evidence_ref"]: row for row in ctx["material_news"]
         if row["symbol"] in held_symbols
     }
-    news_symbols = {row["symbol"] for row in context_news.values()}
     evidence = {row["ref"]: row for row in ctx["evidence"] if "ref" in row}
 
     invalid_symbols: set[str] = set()
     invalid_refs: set[str] = set()
-    for holding in payload.holdings:
+    for holding in draft.holdings:
         if holding.symbol not in held_symbols:
             invalid_symbols.add(holding.symbol)
         for ref in holding.evidence_refs:
@@ -79,12 +95,8 @@ def _decision_invalid_refs(
                 item.get("symbol") != holding.symbol
             ):
                 invalid_refs.add(ref)
-    for candidate in payload.candidates:
-        context_candidate = context_candidates.get(candidate.symbol)
-        if context_candidate is None or any(
-            getattr(candidate, field) != context_candidate.get(field)
-            for field in ("name", "market", "instrument_type")
-        ):
+    for candidate in draft.candidates:
+        if candidate.symbol not in context_candidates:
             invalid_symbols.add(candidate.symbol)
         for ref in candidate.evidence_refs:
             item = evidence.get(ref)
@@ -92,39 +104,95 @@ def _decision_invalid_refs(
                 item.get("symbol") != candidate.symbol
             ):
                 invalid_refs.add(ref)
-    for news in payload.material_news:
-        if news.symbol not in news_symbols:
-            invalid_symbols.add(news.symbol)
+    for news in draft.material_news:
         context_item = context_news.get(news.evidence_ref)
         evidence_item = evidence.get(news.evidence_ref)
         if (
             context_item is None
-            or context_item.get("symbol") != news.symbol
-            or context_item.get("headline") != news.headline
-            or context_item.get("source") != news.source
-            or context_item.get("url") != news.url
             or evidence_item is None
             or evidence_item.get("kind") != "news"
-            or evidence_item.get("symbol") != news.symbol
         ):
             invalid_refs.add(news.evidence_ref)
-    try:
-        context_as_of = datetime.fromisoformat(ctx["data_as_of"].replace("Z", "+00:00"))
-    except (KeyError, TypeError, ValueError):
-        invalid_refs.add("data_as_of")
-    else:
-        if payload.data_as_of != context_as_of:
-            invalid_refs.add("data_as_of")
     return invalid_symbols, invalid_refs
 
 
-def _decision_holding_coverage(payload: DecisionBriefPayload, ctx: dict) -> set[str]:
-    expected = {row["symbol"] for row in ctx["holdings"]}
-    counts = {symbol: 0 for symbol in expected}
-    for holding in payload.holdings:
-        if holding.symbol in counts:
-            counts[holding.symbol] += 1
-    return {symbol for symbol, count in counts.items() if count != 1}
+def _enrich_decision_draft(draft: DecisionBriefDraft, ctx: dict) -> DecisionBriefPayload:
+    """Join stable-identifier draft fields into the full persisted payload.
+
+    Assumes `draft` has already passed `_decision_invalid_refs` (every symbol
+    and evidence_ref resolves in `ctx`). Also guarantees holding coverage by
+    construction: any held symbol the model omitted is backfilled as
+    data_incomplete, and a symbol listed more than once keeps only its first
+    occurrence — so this step can never fail/502 on coverage.
+    """
+    held_symbols = [row["symbol"] for row in ctx["holdings"]]
+    context_news = {row["evidence_ref"]: row for row in ctx["material_news"]}
+    context_candidates = {row["symbol"]: row for row in ctx["candidates"]}
+
+    seen_symbols: set[str] = set()
+    holdings: list[HoldingDecision] = []
+    for holding in draft.holdings:
+        if holding.symbol in seen_symbols:
+            continue
+        seen_symbols.add(holding.symbol)
+        holdings.append(holding)
+    for symbol in held_symbols:
+        if symbol not in seen_symbols:
+            holdings.append(HoldingDecision(
+                symbol=symbol,
+                action="data_incomplete",
+                conviction=None,
+                rationale="No analysis returned for this holding — inputs incomplete.",
+                evidence_refs=[],
+                change_conditions=[],
+            ))
+    order = {symbol: index for index, symbol in enumerate(held_symbols)}
+    holdings.sort(key=lambda h: order.get(h.symbol, len(order)))
+
+    material_news = [
+        DecisionNewsItem(
+            evidence_ref=item.evidence_ref,
+            symbol=context_news[item.evidence_ref]["symbol"],
+            importance=item.importance,
+            headline=context_news[item.evidence_ref]["headline"],
+            source=context_news[item.evidence_ref]["source"],
+            url=context_news[item.evidence_ref]["url"],
+            impact=item.impact,
+        )
+        for item in draft.material_news
+        if item.evidence_ref in context_news
+    ]
+
+    candidates = [
+        CandidateIdea(
+            symbol=item.symbol,
+            name=context_candidates[item.symbol]["name"],
+            instrument_type=context_candidates[item.symbol]["instrument_type"],
+            market=context_candidates[item.symbol]["market"],
+            action=item.action,
+            conviction=item.conviction,
+            why_surfaced=item.why_surfaced,
+            portfolio_fit=item.portfolio_fit,
+            principal_risk=item.principal_risk,
+            watch_next=item.watch_next,
+            evidence_refs=item.evidence_refs,
+        )
+        for item in draft.candidates
+        if item.symbol in context_candidates
+    ]
+
+    data_as_of = datetime.fromisoformat(ctx["data_as_of"].replace("Z", "+00:00"))
+
+    return DecisionBriefPayload(
+        summary=draft.summary,
+        holdings=holdings,
+        material_news=material_news,
+        portfolio_observations=draft.portfolio_observations,
+        candidates=candidates,
+        unavailable_inputs=draft.unavailable_inputs,
+        data_as_of=data_as_of,
+        disclaimer=draft.disclaimer,
+    )
 
 
 def _orso_invalid_codes(payload: OrsoAdvicePayload, fund_menu: set[str]) -> set[str]:
@@ -350,50 +418,47 @@ class GuruService:
                 "role": "user",
                 "content": _DECISION_INSTRUCTION + "\n\n" + json.dumps(ctx),
             }]
-            payload, usage = await provider.generate_structured(
+            draft, usage = await provider.generate_structured(
                 system=PERSONA_V1,
                 messages=messages,
-                schema=DecisionBriefPayload,
+                schema=DecisionBriefDraft,
                 model=self.advice_model,
-                max_tokens=4096,
+                max_tokens=8192,
             )
-            invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
-            invalid_coverage = _decision_holding_coverage(payload, ctx)
-            if invalid_symbols or invalid_refs or invalid_coverage:
+            invalid_symbols, invalid_refs = _decision_invalid_refs(draft, ctx)
+            if invalid_symbols or invalid_refs:
                 messages += [
-                    {"role": "assistant", "content": payload.model_dump_json()},
+                    {"role": "assistant", "content": draft.model_dump_json()},
                     {
                         "role": "user",
                         "content": (
                             f"Invalid symbols: {sorted(invalid_symbols)}. Invalid evidence "
-                            f"references: {sorted(invalid_refs)}. Holdings missing or not "
-                            f"listed exactly once: {sorted(invalid_coverage)}. Return the "
-                            "complete decision brief "
-                            "again, covering every holding and using only symbols and evidence "
-                            "references from the supplied context."
+                            f"references: {sorted(invalid_refs)}. Return the complete decision "
+                            "brief again, covering every holding and using only symbols and "
+                            "evidence references from the supplied context."
                         ),
                     },
                 ]
                 first_usage = usage
-                payload, usage = await provider.generate_structured(
+                draft, usage = await provider.generate_structured(
                     system=PERSONA_V1,
                     messages=messages,
-                    schema=DecisionBriefPayload,
+                    schema=DecisionBriefDraft,
                     model=self.advice_model,
-                    max_tokens=4096,
+                    max_tokens=8192,
                 )
                 usage = Usage(
                     input_tokens=first_usage.input_tokens + usage.input_tokens,
                     output_tokens=first_usage.output_tokens + usage.output_tokens,
                 )
-                invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
-                invalid_coverage = _decision_holding_coverage(payload, ctx)
-                if invalid_symbols or invalid_refs or invalid_coverage:
+                invalid_symbols, invalid_refs = _decision_invalid_refs(draft, ctx)
+                if invalid_symbols or invalid_refs:
                     raise LLMError(
                         "decision brief remained invalid after correction: "
-                        f"symbols={sorted(invalid_symbols)}, refs={sorted(invalid_refs)}, "
-                        f"invalid_coverage={sorted(invalid_coverage)}"
+                        f"symbols={sorted(invalid_symbols)}, refs={sorted(invalid_refs)}"
                     )
+
+            payload = _enrich_decision_draft(draft, ctx)
 
             report = GuruReport(
                 user_id=user.id,
