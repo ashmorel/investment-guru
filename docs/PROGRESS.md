@@ -1,6 +1,12 @@
 # Progress
 
-_Last updated: 2026-07-13 (sector-rotation advice complete, no migration — enhancement programme DONE)._
+_Last updated: 2026-07-15 (Decision Cockpit + grounded stock discovery live in production; no migration)._
+
+## Decision Cockpit + stock discovery: COMPLETE
+
+The dashboard now leads with a single readable decision brief. It turns the app's own portfolio valuations, deterministic signals, cached holding news, investor profile, and a bounded US/UK/HK stock/ETF catalogue into clear increase/hold/reduce/exit lanes plus a separate “stocks to research” section. Candidate assembly is user-scoped, excludes existing holdings, merges catalogue/profile/watchlist provenance, and uses deterministic evidence scoring without invented prices or performance claims. The Guru's structured result is validated against the supplied context, corrected once on unknown symbols/evidence, encrypted in `GuruReport(kind="decision_brief")`, and exposed through authenticated `GET/POST /api/guru/decision-brief` routes with the standard budget/lock/provider degradation behavior.
+
+The React `DecisionCockpit` renders the advice, news context, missing-data states, and candidate evidence in an action-first responsive layout; the application shell now provides usable mobile navigation. Production commit `2c33e2a` was verified with Ruff + 436 backend tests and the migration chain, plus frontend typecheck/lint + 147 tests + production build. GitHub CI, Vercel, and Railway all reported success; the live login shell rendered without console errors.
 
 ## Phase 1 — portfolio core: COMPLETE
 
