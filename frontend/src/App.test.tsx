@@ -45,4 +45,19 @@ describe("App nav", () => {
 
     expect(await screen.findByRole("link", { name: /^admin$/i })).toBeInTheDocument();
   });
+
+  it("uses a mobile column shell and restores the fixed sidebar at md", async () => {
+    vi.resetModules();
+    const { default: App } = await import("./App");
+    mockApi({ id: 1, email: "lee@test.dev", is_admin: false });
+    const { container } = render(<App />);
+
+    await screen.findByText("Dashboard");
+    const shell = container.querySelector("[data-testid='app-shell']");
+    const nav = screen.getByRole("navigation");
+    const main = screen.getByRole("main");
+    expect(shell).toHaveClass("flex-col", "md:flex-row");
+    expect(nav).toHaveClass("w-full", "md:w-56", "md:min-h-screen");
+    expect(main).toHaveClass("min-w-0", "p-4", "md:p-8");
+  });
 });

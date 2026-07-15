@@ -42,10 +42,10 @@ function RequireAuth() {
   if (me.isPending) return <div className="p-8 text-muted">Loading…</div>;
   if (me.isError) return <Navigate to="/login" replace />;
   return (
-    <div className="flex min-h-screen bg-bg">
-      <nav className="w-56 shrink-0 border-r border-border bg-surface p-4">
-        <p className="mb-6 font-semibold text-text">Investment Guru</p>
-        <ul className="space-y-1 text-sm">
+    <div data-testid="app-shell" className="flex min-h-screen flex-col bg-bg md:flex-row">
+      <nav className="w-full shrink-0 border-b border-border bg-surface p-4 md:min-h-screen md:w-56 md:border-r md:border-b-0">
+        <p className="mb-3 font-semibold text-text md:mb-6">Investment Guru</p>
+        <ul className="flex flex-wrap gap-1 text-sm md:block md:space-y-1">
           <NavItem to="/" label="Dashboard" />
           <NavItem to="/portfolios" label="Portfolios" />
           <NavItem to="/sectors" label="Sectors" />
@@ -56,7 +56,7 @@ function RequireAuth() {
           {me.data?.is_admin && <NavItem to="/admin" label="Admin" />}
         </ul>
       </nav>
-      <main className="flex-1 p-8">
+      <main className="min-w-0 flex-1 p-4 md:p-8">
         <Outlet />
       </main>
     </div>

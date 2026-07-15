@@ -60,7 +60,7 @@ def _decision_invalid_refs(
     payload: DecisionBriefPayload, ctx: dict
 ) -> tuple[set[str], set[str]]:
     held_symbols = {row["symbol"] for row in ctx["holdings"]}
-    candidate_symbols = {row["symbol"] for row in ctx["candidates"]}
+    context_candidates = {row["symbol"]: row for row in ctx["candidates"]}
     context_news = {
         row["evidence_ref"]: row for row in ctx["material_news"]
         if row["symbol"] in held_symbols
@@ -80,7 +80,11 @@ def _decision_invalid_refs(
             ):
                 invalid_refs.add(ref)
     for candidate in payload.candidates:
-        if candidate.symbol not in candidate_symbols:
+        context_candidate = context_candidates.get(candidate.symbol)
+        if context_candidate is None or any(
+            getattr(candidate, field) != context_candidate.get(field)
+            for field in ("name", "market", "instrument_type")
+        ):
             invalid_symbols.add(candidate.symbol)
         for ref in candidate.evidence_refs:
             item = evidence.get(ref)
@@ -97,11 +101,20 @@ def _decision_invalid_refs(
             context_item is None
             or context_item.get("symbol") != news.symbol
             or context_item.get("headline") != news.headline
+            or context_item.get("source") != news.source
+            or context_item.get("url") != news.url
             or evidence_item is None
             or evidence_item.get("kind") != "news"
             or evidence_item.get("symbol") != news.symbol
         ):
             invalid_refs.add(news.evidence_ref)
+    try:
+        context_as_of = datetime.fromisoformat(ctx["data_as_of"].replace("Z", "+00:00"))
+    except (KeyError, TypeError, ValueError):
+        invalid_refs.add("data_as_of")
+    else:
+        if payload.data_as_of != context_as_of:
+            invalid_refs.add("data_as_of")
     return invalid_symbols, invalid_refs
 
 

@@ -78,10 +78,13 @@ def _context():
     return {
         "holdings": [{"symbol": "AAPL"}],
         "material_news": [{
-            "evidence_ref": "news:1", "symbol": "AAPL", "headline": "Apple update"
+            "evidence_ref": "news:1", "symbol": "AAPL", "headline": "Apple update",
+            "source": "Example Wire", "url": "https://example.com/apple",
         }],
         "candidates": [{
-            "symbol": "MSFT", "evidence_refs": ["candidate:MSFT:momentum"]
+            "symbol": "MSFT", "name": "Microsoft", "market": "US",
+            "instrument_type": "stock",
+            "evidence_refs": ["candidate:MSFT:momentum"]
         }],
         "evidence": [
             {"ref": "signal:1", "kind": "signal", "symbol": "AAPL"},
@@ -89,7 +92,65 @@ def _context():
              "headline": "Apple update"},
             {"ref": "candidate:MSFT:momentum", "kind": "candidate", "symbol": "MSFT"},
         ],
+        "data_as_of": "2026-07-15T00:00:00+00:00",
     }
+
+
+def test_decision_contract_rejects_non_http_news_urls():
+    for url in ("javascript:alert(1)", "/relative", "ftp://example.com/story"):
+        with pytest.raises(ValidationError):
+            DecisionNewsItem(**{**_payload().material_news[0].model_dump(), "url": url})
+
+
+def test_decision_contract_enforces_candidate_and_evidence_bounds():
+    with pytest.raises(ValidationError):
+        _payload(candidates=[_candidate(symbol=f"C{i}") for i in range(6)])
+    with pytest.raises(ValidationError):
+        _payload(candidates=[_candidate(), _candidate()])
+    with pytest.raises(ValidationError):
+        _payload(candidates=[_candidate(refs=())])
+    with pytest.raises(ValidationError):
+        DecisionBriefPayload(**{
+            **_payload().model_dump(),
+            "material_news": [_payload().material_news[0].model_dump()] * 2,
+        })
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"source": "Invented Wire"},
+        {"url": "https://evil.example/invented"},
+        {"headline": "Altered headline"},
+    ],
+)
+def test_decision_validation_binds_news_to_canonical_context(changes):
+    news = DecisionNewsItem(**{**_payload().material_news[0].model_dump(), **changes})
+    payload = DecisionBriefPayload(**{
+        **_payload().model_dump(), "material_news": [news.model_dump()]
+    })
+    assert _decision_invalid_refs(payload, _context())[1] == {"news:1"}
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"name": "Invented Corp"},
+        {"market": "UK"},
+        {"instrument_type": "etf"},
+    ],
+)
+def test_decision_validation_binds_candidate_metadata(changes):
+    candidate = CandidateIdea(**{**_candidate().model_dump(), **changes})
+    payload = _payload(candidates=[candidate])
+    assert "MSFT" in _decision_invalid_refs(payload, _context())[0]
+
+
+def test_decision_validation_binds_data_as_of():
+    payload = DecisionBriefPayload(**{
+        **_payload().model_dump(), "data_as_of": datetime(2026, 7, 16, tzinfo=UTC)
+    })
+    assert "data_as_of" in _decision_invalid_refs(payload, _context())[1]
 
 
 def _svc(fake):
@@ -128,7 +189,7 @@ def test_decision_contract_keeps_urls_and_evidence_refs_as_strings():
 @pytest.mark.parametrize(
     ("payload", "invalid_symbol", "invalid_ref"),
     [
-        (_payload(candidates=[_candidate(symbol="AAPL", refs=())]), "AAPL", None),
+        (_payload(candidates=[_candidate(symbol="AAPL")]), "AAPL", None),
         (_payload(holdings=[_holding(symbol="MSFT", refs=())]), "MSFT", None),
         (DecisionBriefPayload(**{
             **_payload().model_dump(),
@@ -216,8 +277,17 @@ async def test_generate_decision_brief_corrects_invalid_refs_and_missing_holding
     ctx = _context()
     ctx["holdings"].append({"symbol": "GOOG"})
     fake = FakeLLMProvider()
+    invented_news = DecisionNewsItem(**{
+        **_payload().material_news[0].model_dump(),
+        "source": "Invented Wire",
+        "url": "https://invented.example/story",
+    })
     fake.structured_queue.extend([
-        _payload(holdings=[_holding(symbol="NOPE", refs=("invented:1",))]),
+        DecisionBriefPayload(**{
+            **_payload(holdings=[_holding(symbol="NOPE", refs=("invented:1",))]).model_dump(),
+            "material_news": [invented_news.model_dump()],
+            "data_as_of": datetime(2026, 7, 16, tzinfo=UTC),
+        }),
         _payload(holdings=[
             _holding(),
             _holding(symbol="GOOG", action="data_incomplete", conviction=None, refs=()),
@@ -235,6 +305,8 @@ async def test_generate_decision_brief_corrects_invalid_refs_and_missing_holding
     correction = fake.calls[1]["messages"][-1]["content"]
     assert "NOPE" in correction
     assert "invented:1" in correction
+    assert "news:1" in correction
+    assert "data_as_of" in correction
     assert "GOOG" in correction
     usage = (await db_session.execute(
         select(LlmUsage).where(LlmUsage.report_id == report.id)
@@ -271,10 +343,11 @@ async def test_generate_decision_brief_invalid_twice_persists_nothing(db_session
     db_session.add(user)
     await db_session.commit()
     fake = FakeLLMProvider()
-    fake.structured_queue.extend([
-        _payload(holdings=[_holding(symbol="NOPE")]),
-        _payload(holdings=[_holding(symbol="STILL-NOPE")]),
-    ])
+    altered_candidate = CandidateIdea(**{
+        **_candidate().model_dump(), "name": "Invented Corporation"
+    })
+    invalid = _payload(candidates=[altered_candidate])
+    fake.structured_queue.extend([invalid, invalid])
 
     async def build(*args, **kwargs):
         return _context()

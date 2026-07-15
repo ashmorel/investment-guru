@@ -149,6 +149,30 @@ describe("DecisionCockpit", () => {
     expect(link).toHaveAttribute("rel", "noreferrer");
   });
 
+  it("renders unsafe legacy news URLs as text without links", async () => {
+    const unsafe = structuredClone(REPORT);
+    unsafe.payload.material_news[0].url = "javascript:alert(1)";
+    mockFetch(unsafe);
+    const user = userEvent.setup();
+    renderCockpit();
+
+    const teslaRow = (await screen.findByRole("heading", { name: "TSLA" })).closest("article");
+    if (!teslaRow) throw new Error("TSLA decision missing");
+    await user.click(within(teslaRow).getByText("View evidence"));
+    expect(within(teslaRow).getByText(/Regulator expands review/)).toBeInTheDocument();
+    expect(within(teslaRow).queryByRole("link", { name: /Regulator expands review/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Regulator expands review/ })).not.toBeInTheDocument();
+  });
+
+  it("uses level-three headings for sections nested under the cockpit heading", async () => {
+    mockFetch();
+    renderCockpit();
+    await screen.findByText(REPORT.payload.summary);
+    for (const name of ["Actions", "News that matters", "Portfolio context", "Ideas to consider holding"]) {
+      expect(screen.getByRole("heading", { name, level: 3 })).toBeInTheDocument();
+    }
+  });
+
   it("renders candidate details and adds the symbol to a selected watchlist", async () => {
     const fetchSpy = mockFetch();
     fetchSpy.mockImplementation(async (input, init) => {

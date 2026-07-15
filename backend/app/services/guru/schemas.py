@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Self
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PositionVerdict(BaseModel):
@@ -152,6 +152,16 @@ class DecisionNewsItem(BaseModel):
     url: str
     impact: str
 
+    @field_validator("url")
+    @classmethod
+    def url_is_absolute_http(cls, value: str) -> str:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("url must be an absolute http(s) URL")
+        return value
+
 
 class CandidateIdea(BaseModel):
     symbol: str
@@ -166,13 +176,30 @@ class CandidateIdea(BaseModel):
     watch_next: list[str]
     evidence_refs: list[str]
 
+    @field_validator("evidence_refs")
+    @classmethod
+    def has_evidence(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("candidate must cite at least one evidence reference")
+        return value
+
 
 class DecisionBriefPayload(BaseModel):
     summary: str
     holdings: list[HoldingDecision]
     material_news: list[DecisionNewsItem]
     portfolio_observations: list[str]
-    candidates: list[CandidateIdea]
+    candidates: list[CandidateIdea] = Field(max_length=5)
     unavailable_inputs: list[str]
     data_as_of: datetime
     disclaimer: str
+
+    @model_validator(mode="after")
+    def unique_symbols_and_news_refs(self) -> Self:
+        candidate_symbols = [candidate.symbol for candidate in self.candidates]
+        if len(candidate_symbols) != len(set(candidate_symbols)):
+            raise ValueError("candidate symbols must be unique")
+        news_refs = [item.evidence_ref for item in self.material_news]
+        if len(news_refs) != len(set(news_refs)):
+            raise ValueError("material news evidence references must be unique")
+        return self

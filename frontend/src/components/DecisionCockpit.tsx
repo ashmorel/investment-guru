@@ -25,6 +25,24 @@ function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function isSafeHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function NewsHeadline({ item, className = "" }: { item: DecisionNewsItem; className?: string }) {
+  if (!isSafeHttpUrl(item.url)) return <span className={className}>{item.headline}</span>;
+  return (
+    <a href={item.url} target="_blank" rel="noreferrer" className={className}>
+      {item.headline}
+    </a>
+  );
+}
+
 function Evidence({ decision, news }: { decision: HoldingDecision; news: DecisionNewsItem[] }) {
   const sources = decision.evidence_refs
     .map((ref) => news.find((item) => item.evidence_ref === ref))
@@ -36,14 +54,7 @@ function Evidence({ decision, news }: { decision: HoldingDecision; news: Decisio
       <div className="mt-3 space-y-2 text-muted">
         {sources.map((item) => (
           <p key={item.evidence_ref}>
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-accent hover:underline"
-            >
-              {item.headline} ↗
-            </a>{" "}
+            <NewsHeadline item={{ ...item, headline: `${item.headline} ↗` }} className="font-medium text-accent hover:underline" />{" "}
             · {item.source} · {item.impact}
           </p>
         ))}
@@ -162,7 +173,7 @@ function Brief({ payload, watchlists }: { payload: DecisionBriefPayload; watchli
     <div className="space-y-6">
       <p className="rounded-xl bg-accent-subtle p-4 text-sm text-accent">{payload.summary}</p>
       <section aria-labelledby="decision-actions" className="rounded-xl border border-border bg-surface p-5">
-        <h2 id="decision-actions" className="text-xl font-semibold text-text">Actions</h2>
+        <h3 id="decision-actions" className="text-xl font-semibold text-text">Actions</h3>
         <p className="mt-1 text-xs text-muted">Act · {countLabel(actionable.length, "holding")} need{actionable.length === 1 ? "s" : ""} a decision</p>
         <div className="mt-3 space-y-3">
           {actionable.map((decision) => <DecisionRow key={decision.symbol} decision={decision} news={payload.material_news} />)}
@@ -185,14 +196,14 @@ function Brief({ payload, watchlists }: { payload: DecisionBriefPayload; watchli
       </section>
 
       <section aria-labelledby="decision-news" className="rounded-xl border border-border bg-surface p-5">
-        <h2 id="decision-news" className="text-xl font-semibold text-text">News that matters</h2>
+        <h3 id="decision-news" className="text-xl font-semibold text-text">News that matters</h3>
         <p className="mt-1 text-xs text-muted">Only evidence that affects or may affect a holding verdict.</p>
         <ul className="mt-3 space-y-3">
           {payload.material_news.map((item) => (
             <li key={item.evidence_ref} className="rounded-xl border border-border p-4 text-sm">
               <span className="font-semibold uppercase text-accent">{item.importance}</span>{" "}
               <strong className="ml-2 text-text">{item.symbol}</strong>
-              <a href={item.url} target="_blank" rel="noreferrer" className="ml-2 text-text hover:underline">{item.headline}</a>
+              <NewsHeadline item={item} className="ml-2 text-text hover:underline" />
               <p className="mt-1 text-muted">{item.source} · {item.impact}</p>
             </li>
           ))}
@@ -200,14 +211,14 @@ function Brief({ payload, watchlists }: { payload: DecisionBriefPayload; watchli
       </section>
 
       <section aria-labelledby="portfolio-context" className="rounded-xl border border-border bg-surface p-5">
-        <h2 id="portfolio-context" className="text-xl font-semibold text-text">Portfolio context</h2>
+        <h3 id="portfolio-context" className="text-xl font-semibold text-text">Portfolio context</h3>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-text">
           {payload.portfolio_observations.map((observation) => <li key={observation}>{observation}</li>)}
         </ul>
       </section>
 
       <section aria-labelledby="candidate-ideas" className="rounded-xl border border-border bg-surface p-5">
-        <h2 id="candidate-ideas" className="text-xl font-semibold text-text">Ideas to consider holding</h2>
+        <h3 id="candidate-ideas" className="text-xl font-semibold text-text">Ideas to consider holding</h3>
         <p className="mt-1 text-xs text-muted">Grounded shortlist · not currently held · no trade execution</p>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
           {payload.candidates.map((candidate) => <CandidateCard key={candidate.symbol} candidate={candidate} watchlists={watchlists} />)}
