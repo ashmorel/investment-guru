@@ -160,6 +160,10 @@ describe("DecisionCockpit", () => {
     const card = (await screen.findByText("VIG")).closest("article");
     if (!card) throw new Error("candidate card missing");
     expect(within(card).getByText("Vanguard Dividend Appreciation ETF")).toBeInTheDocument();
+    expect(within(card).getByText("Quality dividend screen")).toBeInTheDocument();
+    for (const item of REPORT.payload.candidates[0].watch_next) {
+      expect(within(card).getByText(item)).toBeInTheDocument();
+    }
     await user.selectOptions(within(card).getByRole("combobox", { name: /watchlist/i }), "2");
     await user.click(within(card).getByRole("button", { name: /add VIG to watchlist/i }));
     expect(await within(card).findByText("Added to Ideas")).toBeInTheDocument();

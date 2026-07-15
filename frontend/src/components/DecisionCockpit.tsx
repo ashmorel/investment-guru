@@ -103,8 +103,23 @@ function CandidateCard({ candidate, watchlists }: { candidate: CandidateIdea; wa
         <span className="rounded-full bg-accent-subtle px-2.5 py-1 text-accent">CONSIDER</span>
         <span className="rounded-full bg-bg px-2.5 py-1 text-muted">{candidate.conviction} conviction</span>
       </div>
+      <p className="mt-3 text-xs text-muted">
+        <span className="font-medium text-text">Why surfaced</span> ·{" "}
+        <span>{candidate.why_surfaced}</span>
+      </p>
       <p className="mt-3 text-sm text-text">{candidate.portfolio_fit}</p>
       <p className="mt-2 text-xs text-muted">Principal risk · {candidate.principal_risk}</p>
+      {candidate.watch_next.length > 0 && (
+        <div className="mt-3 text-xs text-muted">
+          <p className="font-medium text-text">Watch next</p>
+          <ul
+            aria-label={`What to watch for ${candidate.symbol}`}
+            className="mt-1 list-disc space-y-1 pl-4"
+          >
+            {candidate.watch_next.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      )}
       {add.isSuccess ? (
         <p className="mt-4 text-sm font-medium text-gain">Added to {selectedName}</p>
       ) : (
