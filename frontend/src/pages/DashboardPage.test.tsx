@@ -60,6 +60,10 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText("Growth")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toEqual([
+      screen.getByRole("heading", { name: "Dashboard", level: 1 }),
+    ]);
+    expect(screen.getByRole("heading", { name: "Decision Cockpit", level: 2 })).toBeInTheDocument();
     expect(screen.getByText(/2,600\.00/)).toBeInTheDocument();
     expect(screen.getByText(/Guru's take/)).toBeInTheDocument();
   });
