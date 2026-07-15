@@ -12,6 +12,7 @@ from app.services.guru.context import build_context
 from app.services.guru.llm.base import LLMError, LLMNotConfigured, LLMProvider, Usage
 from app.services.guru.persona import PERSONA_V1
 from app.services.guru.schemas import (
+    DecisionBriefPayload,
     DigestPayload,
     NewsSummaryPayload,
     OrsoAdvicePayload,
@@ -42,6 +43,35 @@ _NEWS_INSTRUCTION = (
     "disclaimer that this is general information, not advice. Base it ONLY on the "
     "headlines provided."
 )
+
+
+_DECISION_INSTRUCTION = (
+    "Produce a decision brief covering EVERY holding in the supplied context, including "
+    "holdings whose inputs are incomplete (use action=data_incomplete for those). Reason "
+    "ONLY from the supplied context and cite only its stable evidence references. Do not "
+    "use model-memory facts or invent figures. Keep all recommendations directional: do "
+    "not state amounts, prices, share counts, target prices, or specific trade instructions. "
+    "Distinguish missing data from a hold verdict. Always include the standard disclaimer "
+    "that this is general educational information, not regulated financial advice."
+)
+
+
+def _decision_invalid_refs(
+    payload: DecisionBriefPayload, ctx: dict
+) -> tuple[set[str], set[str]]:
+    allowed_symbols = {h["symbol"] for h in ctx["holdings"]} | {
+        c["symbol"] for c in ctx["candidates"]
+    }
+    allowed_refs = {e.get("ref", e.get("id")) for e in ctx["evidence"]}
+    used_symbols = {h.symbol for h in payload.holdings} | {
+        c.symbol for c in payload.candidates
+    } | {item.symbol for item in payload.material_news}
+    used_refs = {
+        ref for h in payload.holdings for ref in h.evidence_refs
+    } | {
+        ref for c in payload.candidates for ref in c.evidence_refs
+    } | {item.evidence_ref for item in payload.material_news}
+    return used_symbols - allowed_symbols, used_refs - allowed_refs
 
 
 def _orso_invalid_codes(payload: OrsoAdvicePayload, fund_menu: set[str]) -> set[str]:
@@ -243,6 +273,94 @@ class GuruService:
             await usage_mod.record_usage(db, user_id=user.id, mode="rotation",
                                          model=self.advice_model, usage=usage,
                                          report_id=report.id, price=self.advice_price)
+            await db.commit()
+            return report
+
+    async def generate_decision_brief(self, db: AsyncSession, user: User) -> GuruReport:
+        from app.services.guru.decision_context import (
+            DecisionContextTooLarge,
+            build_decision_context,
+        )
+
+        provider = self._require_provider()
+        lock = self._lock(f"decision:{user.id}")
+        if lock.locked():
+            raise GenerationInProgress("decision")
+        async with lock:
+            await check_budget(db, user.id)
+            try:
+                ctx = await build_decision_context(db, user, self.quotes, self.fx)
+            except DecisionContextTooLarge as exc:
+                raise LLMError("decision context is too large to generate safely") from exc
+
+            expected_holdings = {row["symbol"] for row in ctx["holdings"]}
+            messages = [{
+                "role": "user",
+                "content": _DECISION_INSTRUCTION + "\n\n" + json.dumps(ctx),
+            }]
+            payload, usage = await provider.generate_structured(
+                system=PERSONA_V1,
+                messages=messages,
+                schema=DecisionBriefPayload,
+                model=self.advice_model,
+                max_tokens=4096,
+            )
+            invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
+            missing_holdings = expected_holdings - {row.symbol for row in payload.holdings}
+            if invalid_symbols or invalid_refs or missing_holdings:
+                messages += [
+                    {"role": "assistant", "content": payload.model_dump_json()},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Invalid symbols: {sorted(invalid_symbols)}. Invalid evidence "
+                            f"references: {sorted(invalid_refs)}. Missing holdings: "
+                            f"{sorted(missing_holdings)}. Return the complete decision brief "
+                            "again, covering every holding and using only symbols and evidence "
+                            "references from the supplied context."
+                        ),
+                    },
+                ]
+                first_usage = usage
+                payload, usage = await provider.generate_structured(
+                    system=PERSONA_V1,
+                    messages=messages,
+                    schema=DecisionBriefPayload,
+                    model=self.advice_model,
+                    max_tokens=4096,
+                )
+                usage = Usage(
+                    input_tokens=first_usage.input_tokens + usage.input_tokens,
+                    output_tokens=first_usage.output_tokens + usage.output_tokens,
+                )
+                invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
+                missing_holdings = expected_holdings - {row.symbol for row in payload.holdings}
+                if invalid_symbols or invalid_refs or missing_holdings:
+                    raise LLMError(
+                        "decision brief remained invalid after correction: "
+                        f"symbols={sorted(invalid_symbols)}, refs={sorted(invalid_refs)}, "
+                        f"missing_holdings={sorted(missing_holdings)}"
+                    )
+
+            report = GuruReport(
+                user_id=user.id,
+                kind="decision",
+                portfolio_id=None,
+                payload=payload.model_dump(mode="json"),
+                model=self.advice_model,
+                created_at=_now(),
+            )
+            db.add(report)
+            await db.flush()
+            await usage_mod.record_usage(
+                db,
+                user_id=user.id,
+                mode="decision",
+                model=self.advice_model,
+                usage=usage,
+                report_id=report.id,
+                price=self.advice_price,
+            )
             await db.commit()
             return report
 

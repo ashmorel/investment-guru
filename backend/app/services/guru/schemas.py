@@ -1,6 +1,7 @@
-from typing import Literal
+from datetime import datetime
+from typing import Literal, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class PositionVerdict(BaseModel):
@@ -122,4 +123,56 @@ class RotationAdvicePayload(BaseModel):
     groups: list[GroupObservation]
     rotations: list[Rotation]
     caveats: list[str]
+    disclaimer: str
+
+
+class HoldingDecision(BaseModel):
+    symbol: str
+    action: Literal["hold", "increase", "reduce", "exit", "data_incomplete"]
+    conviction: Literal["low", "med", "high"] | None
+    rationale: str
+    evidence_refs: list[str]
+    change_conditions: list[str]
+
+    @model_validator(mode="after")
+    def conviction_matches_action(self) -> Self:
+        if self.action == "data_incomplete" and self.conviction is not None:
+            raise ValueError("data_incomplete holdings must not have a conviction")
+        if self.action != "data_incomplete" and self.conviction is None:
+            raise ValueError("actionable holdings require a conviction")
+        return self
+
+
+class DecisionNewsItem(BaseModel):
+    evidence_ref: str
+    symbol: str
+    importance: Literal["material", "watch", "context"]
+    headline: str
+    source: str
+    url: str
+    impact: str
+
+
+class CandidateIdea(BaseModel):
+    symbol: str
+    name: str
+    instrument_type: Literal["stock", "etf"]
+    market: Literal["US", "UK", "HK"]
+    action: Literal["consider"]
+    conviction: Literal["low", "med", "high"]
+    why_surfaced: str
+    portfolio_fit: str
+    principal_risk: str
+    watch_next: list[str]
+    evidence_refs: list[str]
+
+
+class DecisionBriefPayload(BaseModel):
+    summary: str
+    holdings: list[HoldingDecision]
+    material_news: list[DecisionNewsItem]
+    portfolio_observations: list[str]
+    candidates: list[CandidateIdea]
+    unavailable_inputs: list[str]
+    data_as_of: datetime
     disclaimer: str
