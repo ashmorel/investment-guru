@@ -131,10 +131,16 @@ async def catch_up(session_factory=None) -> None:
 
 def create_scheduler() -> AsyncIOScheduler:
     from app.services.groups.snapshot import run_group_snapshot_job
+    from app.services.signals.refresh import run_analysis_job
 
     sched = AsyncIOScheduler(timezone=settings.guru_timezone)
+    # Ordered so each morning's jobs run on fresh inputs: signals refresh first
+    # (:00), then digest/take which read those signals (:15), then the group
+    # snapshot (:30).
+    sched.add_job(run_analysis_job, CronTrigger(
+        hour=settings.guru_digest_hour, minute=0, timezone=settings.guru_timezone))
     sched.add_job(run_daily_job, CronTrigger(
-        hour=settings.guru_digest_hour, timezone=settings.guru_timezone))
+        hour=settings.guru_digest_hour, minute=15, timezone=settings.guru_timezone))
     sched.add_job(run_group_snapshot_job, CronTrigger(
         hour=settings.guru_digest_hour, minute=30, timezone=settings.guru_timezone))
     return sched
