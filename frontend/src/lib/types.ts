@@ -108,7 +108,51 @@ export interface PositionVerdict { symbol: string; action: GuruAction; convictio
 export interface ReviewPayload { positions: PositionVerdict[]; observations: string[]; watch_next: string[]; disclaimer: string; }
 export interface DigestPayload { earnings_this_week: { symbol: string; date: string | null; note: string }[]; movers: { symbol: string; note: string }[]; news_flags: { symbol: string | null; headline: string; comment: string }[]; summary: string; disclaimer: string; }
 export interface TakePayload { commentary: string; risks: { kind: string; note: string }[]; ideas: { symbol: string | null; action: GuruAction; conviction: Conviction; rationale: string }[]; disclaimer: string; }
-export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take" | "orso" | "news"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
+export interface GuruReport<P = unknown> { id: number; kind: "review" | "digest" | "take" | "orso" | "news" | "decision"; portfolio_id: number | null; payload: P; model: string; created_at: string; }
+
+export interface HoldingDecision {
+  symbol: string;
+  action: "hold" | "increase" | "reduce" | "exit" | "data_incomplete";
+  conviction: Conviction | null;
+  rationale: string;
+  evidence_refs: string[];
+  change_conditions: string[];
+}
+
+export interface DecisionNewsItem {
+  evidence_ref: string;
+  symbol: string;
+  importance: "material" | "watch" | "context";
+  headline: string;
+  source: string;
+  url: string;
+  impact: string;
+}
+
+export interface CandidateIdea {
+  symbol: string;
+  name: string;
+  instrument_type: "stock" | "etf";
+  market: "US" | "UK" | "HK";
+  action: "consider";
+  conviction: Conviction;
+  why_surfaced: string;
+  portfolio_fit: string;
+  principal_risk: string;
+  watch_next: string[];
+  evidence_refs: string[];
+}
+
+export interface DecisionBriefPayload {
+  summary: string;
+  holdings: HoldingDecision[];
+  material_news: DecisionNewsItem[];
+  portfolio_observations: string[];
+  candidates: CandidateIdea[];
+  unavailable_inputs: string[];
+  data_as_of: string;
+  disclaimer: string;
+}
 
 // --- News (Task 5) -----------------------------------------------------------
 // Mirrors backend/app/api/news.py NewsItemOut/NewsGroup/NewsResponse/StockNews

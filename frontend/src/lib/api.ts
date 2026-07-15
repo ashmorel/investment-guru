@@ -3,6 +3,7 @@ import type {
   ApplyRequest,
   ApplyResult,
   AssignResult,
+  DecisionBriefPayload,
   GroupExposure,
   GroupHolding,
   GroupTrend,
@@ -49,6 +50,30 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
   if (resp.status === 204) return undefined as T;
   return (await resp.json()) as T;
+}
+
+export function getLatestDecisionBrief(): Promise<GuruReport<DecisionBriefPayload> | null> {
+  return apiFetch<GuruReport<DecisionBriefPayload> | null>("/api/guru/decision-brief/latest");
+}
+
+export function generateDecisionBrief(): Promise<GuruReport<DecisionBriefPayload>> {
+  return apiFetch<GuruReport<DecisionBriefPayload>>("/api/guru/decision-brief", { method: "POST" });
+}
+
+export function decisionBriefErrorMessage(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  switch (error.status) {
+    case 429:
+      return "Daily Guru budget reached";
+    case 409:
+      return "Already generating — check back shortly.";
+    case 502:
+      return "Brief generation failed";
+    case 503:
+      return "Guru is not configured";
+    default:
+      return null;
+  }
 }
 
 // --- ORSO ingest (Task 9) ---------------------------------------------------
