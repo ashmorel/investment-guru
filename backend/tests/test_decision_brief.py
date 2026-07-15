@@ -418,18 +418,16 @@ async def test_generate_decision_brief_dedupes_duplicate_holdings_without_retry(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_generate_decision_brief_corrects_invalid_refs_then_succeeds(
-    db_session, monkeypatch
-):
-    user = User(email="decision-retry@test.dev", password_hash="x")
+async def test_generate_decision_brief_drops_invalid_symbol_and_ref(db_session, monkeypatch):
+    user = User(email="decision-drop@test.dev", password_hash="x")
     db_session.add(user)
     await db_session.commit()
     ctx = _context()
     fake = FakeLLMProvider()
-    fake.structured_queue.extend([
-        _draft(holdings=[_holding(symbol="NOPE", refs=("invented:1",))]),
-        _draft(),
-    ])
+    # A hallucinated (not-held) symbol citing an invented evidence ref is DROPPED
+    # — a single call, no fragile correction retry; the real held symbol is
+    # backfilled as data_incomplete so coverage still holds.
+    fake.structured_queue.append(_draft(holdings=[_holding(symbol="NOPE", refs=("invented:1",))]))
 
     async def build(*args, **kwargs):
         return ctx
@@ -437,37 +435,35 @@ async def test_generate_decision_brief_corrects_invalid_refs_then_succeeds(
     monkeypatch.setattr("app.services.guru.decision_context.build_decision_context", build)
     report = await _svc(fake).generate_decision_brief(db_session, user)
 
-    assert len(fake.calls) == 2
+    assert len(fake.calls) == 1
     assert {row["symbol"] for row in report.payload["holdings"]} == {"AAPL"}
-    correction = fake.calls[1]["messages"][-1]["content"]
-    assert "NOPE" in correction
-    assert "invented:1" in correction
-    usage = (await db_session.execute(
-        select(LlmUsage).where(LlmUsage.report_id == report.id)
-    )).scalar_one()
-    assert usage.input_tokens == 200
-    assert usage.output_tokens == 100
+    aapl = report.payload["holdings"][0]
+    assert aapl["action"] == "data_incomplete"
+    assert aapl["evidence_refs"] == []
+    assert (await db_session.execute(
+        select(LlmUsage).where(LlmUsage.report_id == report.id))).scalar_one() is not None
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_generate_decision_brief_invalid_twice_persists_nothing(db_session, monkeypatch):
-    user = User(email="decision-bad@test.dev", password_hash="x")
+async def test_decision_brief_drops_invalid_candidate(db_session, monkeypatch):
+    user = User(email="decision-badcand@test.dev", password_hash="x")
     db_session.add(user)
     await db_session.commit()
     fake = FakeLLMProvider()
-    invalid = _draft(candidates=[_draft_candidate(symbol="INVENTED")])
-    fake.structured_queue.extend([invalid, invalid])
+    # An invented candidate symbol not in the context is DROPPED; the brief still
+    # generates and persists (never 502 on unverifiable grounding).
+    fake.structured_queue.append(_draft(candidates=[_draft_candidate(symbol="INVENTED")]))
 
     async def build(*args, **kwargs):
         return _context()
 
     monkeypatch.setattr("app.services.guru.decision_context.build_decision_context", build)
-    with pytest.raises(LLMError):
-        await _svc(fake).generate_decision_brief(db_session, user)
+    report = await _svc(fake).generate_decision_brief(db_session, user)
 
-    assert len(fake.calls) == 2
-    assert (await db_session.execute(select(GuruReport))).scalars().all() == []
-    assert (await db_session.execute(select(LlmUsage))).scalars().all() == []
+    assert len(fake.calls) == 1
+    assert report.payload["candidates"] == []
+    persisted = (await db_session.execute(select(GuruReport))).scalars().all()
+    assert len(persisted) == 1 and persisted[0].id == report.id
 
 
 @pytest.mark.asyncio(loop_scope="session")

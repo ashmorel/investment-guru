@@ -40,7 +40,11 @@ def map_guru_errors():
         raise HTTPException(status_code=503, detail="llm_unconfigured") from None
     except GenerationInProgress:
         raise HTTPException(status_code=409, detail="generation_in_progress") from None
-    except LLMError:
+    except LLMError as exc:
+        # LLMError messages are already secret-scrubbed at the provider adapter;
+        # log so guru failures (e.g. a decision-brief provider/timeout error) are
+        # diagnosable in prod instead of an opaque 502.
+        logger.warning("guru LLMError -> 502: %s", exc)
         raise HTTPException(status_code=502, detail="llm_error") from None
     except BudgetExhausted:
         raise HTTPException(status_code=429, detail="budget_exhausted") from None

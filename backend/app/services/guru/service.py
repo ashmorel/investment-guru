@@ -1,7 +1,9 @@
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +29,8 @@ from app.services.guru.schemas import (
 from app.services.market_data.quotes import QuoteService
 from app.services.orso.prices import OrsoPriceService
 from app.services.valuation import FxService
+
+logger = logging.getLogger(__name__)
 
 _ORSO_INSTRUCTION = (
     "Advise on this ORSO pension. Only reference fund codes from the fund menu "
@@ -117,25 +121,51 @@ def _decision_invalid_refs(
 
 
 def _enrich_decision_draft(draft: DecisionBriefDraft, ctx: dict) -> DecisionBriefPayload:
-    """Join stable-identifier draft fields into the full persisted payload.
-
-    Assumes `draft` has already passed `_decision_invalid_refs` (every symbol
-    and evidence_ref resolves in `ctx`). Also guarantees holding coverage by
-    construction: any held symbol the model omitted is backfilled as
-    data_incomplete, and a symbol listed more than once keeps only its first
-    occurrence — so this step can never fail/502 on coverage.
+    """Join stable-identifier draft fields into the full persisted payload,
+    enforcing grounding by CONSTRUCTION so generation can never 502:
+    - hallucinated holding symbols (not actually held) and duplicates are dropped;
+    - any held symbol the model omitted is backfilled as data_incomplete;
+    - each holding's evidence_refs are filtered to only those that resolve in the
+      context for that symbol; unverifiable news items and candidates are dropped;
+    - the factual fields (headline/source/url, name/market/type, data_as_of) are
+      joined from the context, never taken from the model.
     """
     held_symbols = [row["symbol"] for row in ctx["holdings"]]
+    held_set = set(held_symbols)
     context_news = {row["evidence_ref"]: row for row in ctx["material_news"]}
     context_candidates = {row["symbol"]: row for row in ctx["candidates"]}
+    evidence = {row["ref"]: row for row in ctx["evidence"] if "ref" in row}
+
+    def _valid_refs(symbol: str, refs: list[str], kinds: set[str]) -> list[str]:
+        """Keep only refs that resolve in the context for this symbol + kind —
+        drop anything the model cited that we can't verify (grounding by
+        construction, never a hard failure)."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for ref in refs:
+            item = evidence.get(ref)
+            if (item and item.get("kind") in kinds and item.get("symbol") == symbol
+                    and ref not in seen):
+                seen.add(ref)
+                out.append(ref)
+        return out
 
     seen_symbols: set[str] = set()
     holdings: list[HoldingDecision] = []
     for holding in draft.holdings:
-        if holding.symbol in seen_symbols:
+        # Drop hallucinated symbols (not actually held) + duplicates; the held
+        # symbol is still covered by the backfill pass below.
+        if holding.symbol not in held_set or holding.symbol in seen_symbols:
             continue
         seen_symbols.add(holding.symbol)
-        holdings.append(holding)
+        holdings.append(HoldingDecision(
+            symbol=holding.symbol,
+            action=holding.action,
+            conviction=holding.conviction,
+            rationale=holding.rationale,
+            evidence_refs=_valid_refs(holding.symbol, holding.evidence_refs, {"signal", "news"}),
+            change_conditions=holding.change_conditions,
+        ))
     for symbol in held_symbols:
         if symbol not in seen_symbols:
             holdings.append(HoldingDecision(
@@ -149,37 +179,50 @@ def _enrich_decision_draft(draft: DecisionBriefDraft, ctx: dict) -> DecisionBrie
     order = {symbol: index for index, symbol in enumerate(held_symbols)}
     holdings.sort(key=lambda h: order.get(h.symbol, len(order)))
 
-    material_news = [
-        DecisionNewsItem(
-            evidence_ref=item.evidence_ref,
-            symbol=context_news[item.evidence_ref]["symbol"],
-            importance=item.importance,
-            headline=context_news[item.evidence_ref]["headline"],
-            source=context_news[item.evidence_ref]["source"],
-            url=context_news[item.evidence_ref]["url"],
-            impact=item.impact,
-        )
-        for item in draft.material_news
-        if item.evidence_ref in context_news
-    ]
+    material_news: list[DecisionNewsItem] = []
+    seen_news: set[str] = set()
+    for item in draft.material_news:
+        row = context_news.get(item.evidence_ref)
+        if row is None or item.evidence_ref in seen_news:
+            continue
+        try:
+            news = DecisionNewsItem(
+                evidence_ref=item.evidence_ref,
+                symbol=row["symbol"],
+                importance=item.importance,
+                headline=row["headline"],
+                source=row["source"],
+                url=row["url"],
+                impact=item.impact,
+            )
+        except ValidationError:
+            continue  # e.g. a malformed context url — drop rather than fail
+        seen_news.add(item.evidence_ref)
+        material_news.append(news)
 
-    candidates = [
-        CandidateIdea(
+    candidates: list[CandidateIdea] = []
+    seen_candidates: set[str] = set()
+    for item in draft.candidates:
+        row = context_candidates.get(item.symbol)
+        if row is None or item.symbol in seen_candidates:
+            continue
+        refs = _valid_refs(item.symbol, item.evidence_refs, {"candidate"})
+        if not refs:
+            continue  # a candidate must cite at least one verifiable reference
+        seen_candidates.add(item.symbol)
+        candidates.append(CandidateIdea(
             symbol=item.symbol,
-            name=context_candidates[item.symbol]["name"],
-            instrument_type=context_candidates[item.symbol]["instrument_type"],
-            market=context_candidates[item.symbol]["market"],
+            name=row["name"],
+            instrument_type=row["instrument_type"],
+            market=row["market"],
             action=item.action,
             conviction=item.conviction,
             why_surfaced=item.why_surfaced,
             portfolio_fit=item.portfolio_fit,
             principal_risk=item.principal_risk,
             watch_next=item.watch_next,
-            evidence_refs=item.evidence_refs,
-        )
-        for item in draft.candidates
-        if item.symbol in context_candidates
-    ]
+            evidence_refs=refs,
+        ))
 
     data_as_of = datetime.fromisoformat(ctx["data_as_of"].replace("Z", "+00:00"))
 
@@ -418,6 +461,10 @@ class GuruService:
                 "role": "user",
                 "content": _DECISION_INSTRUCTION + "\n\n" + json.dumps(ctx),
             }]
+            logger.info(
+                "decision brief: generating for user %s (%d holdings, %d candidates in context)",
+                user.id, len(ctx["holdings"]), len(ctx["candidates"]),
+            )
             draft, usage = await provider.generate_structured(
                 system=PERSONA_V1,
                 messages=messages,
@@ -425,40 +472,17 @@ class GuruService:
                 model=self.advice_model,
                 max_tokens=8192,
             )
-            invalid_symbols, invalid_refs = _decision_invalid_refs(draft, ctx)
-            if invalid_symbols or invalid_refs:
-                messages += [
-                    {"role": "assistant", "content": draft.model_dump_json()},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Invalid symbols: {sorted(invalid_symbols)}. Invalid evidence "
-                            f"references: {sorted(invalid_refs)}. Return the complete decision "
-                            "brief again, covering every holding and using only symbols and "
-                            "evidence references from the supplied context."
-                        ),
-                    },
-                ]
-                first_usage = usage
-                draft, usage = await provider.generate_structured(
-                    system=PERSONA_V1,
-                    messages=messages,
-                    schema=DecisionBriefDraft,
-                    model=self.advice_model,
-                    max_tokens=8192,
-                )
-                usage = Usage(
-                    input_tokens=first_usage.input_tokens + usage.input_tokens,
-                    output_tokens=first_usage.output_tokens + usage.output_tokens,
-                )
-                invalid_symbols, invalid_refs = _decision_invalid_refs(draft, ctx)
-                if invalid_symbols or invalid_refs:
-                    raise LLMError(
-                        "decision brief remained invalid after correction: "
-                        f"symbols={sorted(invalid_symbols)}, refs={sorted(invalid_refs)}"
-                    )
-
+            # Grounding is enforced by construction in _enrich_decision_draft:
+            # hallucinated symbols and unverifiable evidence refs are dropped,
+            # missing holdings are backfilled as data_incomplete, and the facts
+            # (headline/url/name/timestamp) are joined from the context. A single
+            # generation therefore always yields a valid, grounded brief — there
+            # is no fragile correction retry that could 502.
             payload = _enrich_decision_draft(draft, ctx)
+            logger.info(
+                "decision brief: generated for user %s (%d holdings, %d candidates, %d news)",
+                user.id, len(payload.holdings), len(payload.candidates), len(payload.material_news),
+            )
 
             report = GuruReport(
                 user_id=user.id,
