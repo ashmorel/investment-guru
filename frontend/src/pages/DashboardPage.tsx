@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import AttentionPanel from "../components/AttentionPanel";
+import DecisionCockpit from "../components/DecisionCockpit";
 import GuruTakePanel from "../components/GuruTakePanel";
 import Money from "../components/Money";
 import NewsPanel from "../components/NewsPanel";
@@ -63,6 +64,12 @@ export default function DashboardPage() {
           Analysis failed — provider may be down. Try again.
         </p>
       )}
+      <section aria-labelledby="holding-actions-title" className="space-y-4">
+        <h2 id="holding-actions-title" className="text-lg font-semibold text-text">
+          Actions across your holdings
+        </h2>
+        <DecisionCockpit />
+      </section>
       {portfolios.length === 0 ? (
         <p className="rounded-xl bg-surface p-6 text-muted shadow">
           No portfolios yet. <Link to="/portfolios" className="text-accent underline">Create one</Link>{" "}
