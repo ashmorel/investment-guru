@@ -107,6 +107,13 @@ function renderCockpit() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("DecisionCockpit", () => {
+  it("uses a level-two heading when embedded beneath the dashboard title", async () => {
+    mockFetch(null);
+    renderCockpit();
+
+    expect(await screen.findByRole("heading", { name: "Decision Cockpit", level: 2 })).toBeInTheDocument();
+  });
+
   it("renders the empty state when there is no saved brief", async () => {
     mockFetch(null);
     renderCockpit();

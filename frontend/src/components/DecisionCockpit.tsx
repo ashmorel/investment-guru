@@ -234,7 +234,7 @@ export default function DecisionCockpit() {
     <section aria-labelledby="decision-cockpit-title" className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 id="decision-cockpit-title" className="text-2xl font-bold text-text">Decision Cockpit</h1>
+          <h2 id="decision-cockpit-title" className="text-2xl font-bold text-text">Decision Cockpit</h2>
           {report && <p className="mt-1 text-xs text-muted">Latest brief generated {new Date(report.created_at).toLocaleString()} · Data as of {new Date(report.payload.data_as_of).toLocaleString()}</p>}
         </div>
         {report && (
