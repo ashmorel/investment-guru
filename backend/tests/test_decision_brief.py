@@ -5,9 +5,11 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select, text
 
+from app.core.security import hash_password
 from app.models import GuruReport, LlmUsage, User
+from app.services.guru.budget import BudgetExhausted
 from app.services.guru.decision_context import DecisionContextTooLarge
-from app.services.guru.llm.base import LLMError
+from app.services.guru.llm.base import LLMError, LLMNotConfigured
 from app.services.guru.llm.fake import FakeLLMProvider
 from app.services.guru.persona import DISCLAIMER
 from app.services.guru.schemas import (
@@ -16,7 +18,11 @@ from app.services.guru.schemas import (
     DecisionNewsItem,
     HoldingDecision,
 )
-from app.services.guru.service import GuruService, _decision_invalid_refs
+from app.services.guru.service import (
+    GenerationInProgress,
+    GuruService,
+    _decision_invalid_refs,
+)
 from tests.conftest import _test_services
 
 
@@ -296,3 +302,102 @@ async def test_generate_decision_brief_maps_oversize_context_to_llm_error(db_ses
     with pytest.raises(LLMError, match="decision context"):
         await _svc(fake).generate_decision_brief(db_session, user)
     assert fake.calls == []
+
+
+def _report(user_id: int, *, summary: str, created_at: datetime | None = None) -> GuruReport:
+    return GuruReport(
+        user_id=user_id,
+        kind="decision",
+        portfolio_id=None,
+        payload={"summary": summary},
+        model="test-advice",
+        created_at=created_at or datetime.now(UTC).replace(tzinfo=None),
+    )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decision_brief_latest_endpoint_returns_null_when_empty(auth_client):
+    response = await auth_client.get("/api/guru/decision-brief/latest")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decision_brief_post_endpoint_returns_created_report(
+    guru_client, monkeypatch
+):
+    async def generate(db, user):
+        report = _report(user.id, summary="Fresh brief")
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+        return report
+
+    monkeypatch.setattr(guru_client.guru_service, "generate_decision_brief", generate)
+
+    response = await guru_client.post("/api/guru/decision-brief")
+
+    assert response.status_code == 201
+    assert response.json()["kind"] == "decision"
+    assert response.json()["payload"] == {"summary": "Fresh brief"}
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decision_brief_latest_endpoint_returns_newest_current_user_report(
+    auth_client, db_session
+):
+    user = (await db_session.execute(
+        select(User).where(User.email == "lee@test.dev")
+    )).scalar_one()
+    created_at = datetime(2026, 7, 15, tzinfo=UTC).replace(tzinfo=None)
+    older = _report(user.id, summary="Older", created_at=created_at)
+    newer = _report(user.id, summary="Newer", created_at=created_at)
+    db_session.add_all([older, newer])
+    await db_session.commit()
+
+    response = await auth_client.get("/api/guru/decision-brief/latest")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == newer.id
+    assert response.json()["payload"] == {"summary": "Newer"}
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decision_brief_latest_endpoint_hides_other_users_report(
+    auth_client, db_session
+):
+    other = User(email="decision-other@test.dev", password_hash=hash_password("pw123456"))
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(_report(other.id, summary="Private brief"))
+    await db_session.commit()
+
+    response = await auth_client.get("/api/guru/decision-brief/latest")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "detail"),
+    [
+        (BudgetExhausted(), 429, "budget_exhausted"),
+        (GenerationInProgress(), 409, "generation_in_progress"),
+        (LLMError(), 502, "llm_error"),
+        (LLMNotConfigured(), 503, "llm_unconfigured"),
+    ],
+)
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decision_brief_post_endpoint_maps_guru_errors(
+    guru_client, monkeypatch, error, status_code, detail
+):
+    async def generate(db, user):
+        raise error
+
+    monkeypatch.setattr(guru_client.guru_service, "generate_decision_brief", generate)
+
+    response = await guru_client.post("/api/guru/decision-brief")
+
+    assert response.status_code == status_code
+    assert response.json()["detail"] == detail

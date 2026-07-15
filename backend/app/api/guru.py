@@ -111,6 +111,22 @@ def _report_out(r: GuruReport) -> ReportOut:
                      created_at=r.created_at.isoformat())
 
 
+@router.post("/decision-brief", response_model=ReportOut, status_code=201)
+async def create_decision_brief(db: SessionDep, user: CurrentUser, guru: GuruDep):
+    with map_guru_errors():
+        report = await guru.generate_decision_brief(db, user)
+    return _report_out(report)
+
+
+@router.get("/decision-brief/latest", response_model=ReportOut | None)
+async def read_latest_decision_brief(db: SessionDep, user: CurrentUser):
+    report = (await db.execute(select(GuruReport).where(
+        GuruReport.user_id == user.id, GuruReport.kind == "decision"
+    ).order_by(GuruReport.created_at.desc(), GuruReport.id.desc()).limit(1)
+    )).scalar_one_or_none()
+    return None if report is None else _report_out(report)
+
+
 class ReviewRequest(BaseModel):
     portfolio_id: int
 
