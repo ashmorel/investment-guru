@@ -50,7 +50,9 @@ async def assemble_candidates(
     }
     interests = {
         interest.strip().casefold()
-        for interest in (profile.sector_interests if profile else [])
+        for interest in (
+            profile.sector_interests if profile and profile.user_id == user.id else []
+        )
         if interest.strip()
     }
 

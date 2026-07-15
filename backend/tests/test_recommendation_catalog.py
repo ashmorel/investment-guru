@@ -119,3 +119,23 @@ async def test_assemble_candidates_is_user_scoped_and_excludes_holdings(db_sessi
         for candidate in candidates
         if candidate.symbol != "MSFT"
     )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_assemble_candidates_ignores_another_users_profile(db_session):
+    from app.services.recommendations.candidates import assemble_candidates
+
+    user = User(email="profile-owner@test.dev", password_hash="x")
+    other = User(email="foreign-profile@test.dev", password_hash="x")
+    db_session.add_all([user, other])
+    await db_session.flush()
+    foreign_profile = InvestorProfile(
+        user_id=other.id, risk_appetite="balanced", horizon="long",
+        sector_interests=["technology"], free_text="",
+    )
+    db_session.add(foreign_profile)
+    await db_session.commit()
+
+    candidates = await assemble_candidates(db_session, user, foreign_profile)
+
+    assert all("profile_interest" not in candidate.sources for candidate in candidates)
