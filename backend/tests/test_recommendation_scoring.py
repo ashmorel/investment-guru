@@ -129,3 +129,82 @@ async def test_score_candidates_limits_and_sorts_by_score_then_symbol():
     )
 
     assert [item.seed.symbol for item in results] == ["AAA", "MMM"]
+
+
+@pytest.mark.asyncio
+async def test_score_candidates_omits_empty_supporting_evidence():
+    now = datetime.now(UTC)
+
+    async def quote(seed):
+        return Quote(seed.symbol, Decimal("100"), "USD", Decimal("99"), now)
+
+    async def empty(seed):
+        return {}
+
+    async def empty_list(seed):
+        return []
+
+    results = await score_candidates(
+        [_seed("AAA")],
+        quote_reader=quote,
+        history_reader=empty_list,
+        fundamentals_reader=empty,
+        news_reader=empty_list,
+        signal_reader=empty,
+        diversification_reader=lambda seed: "medium",
+    )
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_score_candidates_omits_malformed_quote_even_with_supporting_evidence():
+    now = datetime.now(UTC)
+
+    async def malformed_quote(seed):
+        return {"symbol": seed.symbol, "price": None}
+
+    async def history(seed):
+        return [Bar(now.date(), Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), 1)]
+
+    async def absent(seed):
+        return None
+
+    results = await score_candidates(
+        [_seed("AAA")],
+        quote_reader=malformed_quote,
+        history_reader=history,
+        fundamentals_reader=absent,
+        news_reader=absent,
+        signal_reader=absent,
+        diversification_reader=lambda seed: "medium",
+    )
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_score_candidates_accepts_usable_fundamentals_as_supporting_evidence():
+    now = datetime.now(UTC)
+
+    async def quote(seed):
+        return Quote(seed.symbol, Decimal("100"), "USD", Decimal("99"), now)
+
+    async def fundamentals(seed):
+        return {"valuation": "reasonable"}
+
+    async def absent(seed):
+        return None
+
+    results = await score_candidates(
+        [_seed("AAA")],
+        quote_reader=quote,
+        history_reader=absent,
+        fundamentals_reader=fundamentals,
+        news_reader=absent,
+        signal_reader=absent,
+        diversification_reader=lambda seed: "medium",
+    )
+
+    assert [item.seed.symbol for item in results] == ["AAA"]
+    assert results[0].availability["fundamentals"] is True

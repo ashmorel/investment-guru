@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal, overload
 
@@ -120,12 +120,48 @@ async def _read(reader: Reader, seed: CandidateSeed) -> tuple[Any, bool]:
 
 
 def _quote_stale(quote: Any) -> bool:
-    as_of = getattr(quote, "as_of", None)
+    as_of = quote.get("as_of") if isinstance(quote, dict) else getattr(quote, "as_of", None)
     if not isinstance(as_of, datetime):
         return False
     if as_of.tzinfo is None:
         as_of = as_of.replace(tzinfo=UTC)
     return datetime.now(UTC) - as_of > QUOTE_STALE_AFTER
+
+
+def _usable_quote(quote: Any) -> bool:
+    if isinstance(quote, dict):
+        price = quote.get("price")
+        currency = quote.get("currency")
+        as_of = quote.get("as_of")
+    else:
+        price = getattr(quote, "price", None)
+        currency = getattr(quote, "currency", None)
+        as_of = getattr(quote, "as_of", None)
+    return (
+        isinstance(price, Decimal)
+        and price > 0
+        and isinstance(currency, str)
+        and bool(currency.strip())
+        and isinstance(as_of, datetime)
+    )
+
+
+def _usable_fundamentals(fundamentals: Any) -> bool:
+    if isinstance(fundamentals, dict):
+        valuation = fundamentals.get("valuation")
+        earnings_date = fundamentals.get("next_earnings_date")
+        fetched_at = fundamentals.get("fetched_at")
+        return (
+            isinstance(valuation, str)
+            and bool(valuation.strip())
+            or isinstance(earnings_date, date)
+            or isinstance(fetched_at, datetime)
+        )
+    fetched_at = getattr(fundamentals, "fetched_at", None)
+    valuation = getattr(fundamentals, "valuation", None)
+    return isinstance(fetched_at, datetime) or (
+        isinstance(valuation, str) and bool(valuation.strip())
+    )
 
 
 def _valuation(fundamentals: Any) -> str | None:
@@ -157,11 +193,13 @@ async def score_candidates(
 ) -> list[ScoredCandidate]:
     scored: list[ScoredCandidate] = []
     for seed in seeds:
-        quote, quote_ok = await _read(quote_reader, seed)
+        quote, quote_read = await _read(quote_reader, seed)
         history, history_ok = await _read(history_reader, seed)
-        fundamentals, fundamentals_ok = await _read(fundamentals_reader, seed)
+        fundamentals, fundamentals_read = await _read(fundamentals_reader, seed)
         news, news_ok = await _read(news_reader, seed)
         signal, signal_ok = await _read(signal_reader, seed)
+        quote_ok = quote_read and _usable_quote(quote)
+        fundamentals_ok = fundamentals_read and _usable_fundamentals(fundamentals)
 
         if not quote_ok or not (history_ok or fundamentals_ok or news_ok):
             continue
