@@ -459,6 +459,19 @@ showed HKD 7,883,571 instead of 1,005,857). All LSRBS funds are now `currency="H
 This supersedes the "native price" framing above for LSRBS: the member-facing figures the app ingests are
 HKD. (Display currency must be HKD, which it is.)
 
+**Decision-cockpit follow-ups (2026-07-14/15, no migration, live — commits `dd1d7b8`/`ecd57d8`/`2a8cac3`):**
+three fixes on top of Codex's decision-cockpit feature. (1) **Decision brief 502** — the grounding validation
+required the LLM to reproduce the exact `data_as_of` datetime + verbatim news headline/source/url + candidate
+name/market/type and cover every holding once in 4096 tokens, twice → always failed → 502. Now the model
+emits a lean `DecisionBriefDraft` (identifiers + reasoning only); `_enrich_decision_draft` joins the factual
+fields from the grounding context by evidence_ref/symbol, sets `data_as_of` server-side, backfills any omitted
+holding as `data_incomplete` (coverage can't fail), and the call uses 8192 tokens. Persisted
+`DecisionBriefPayload` shape unchanged (frontend untouched). (2) **Guru's take** — the "Discuss in chat" link
+moved from per-idea to a single link at the foot of the section. (3) **Stale "Needs your attention"** — signals
+were only refreshed by the manual button, so they went stale; added `run_analysis_job` (every user's real
+portfolios, per-portfolio failure-isolated, non-LLM) + `analysis_catch_up` on startup, scheduled analysis(:00)
+→ digest(:15) → snapshot(:30) so the digest/take also run on fresh signals. Backend 443 / frontend green.
+
 **Open (uncommitted, optional — none blocking):** automated DB backups (recommended before real data
 lands), custom domain, Vercel↔Railway shared-secret header. Remaining code-minors are low-value (per-group
 N+1 in `build_rotation_context`; failed-rotation LLM cost not recorded — mirrors ORSO). Operator steps:
