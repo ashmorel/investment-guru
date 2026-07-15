@@ -267,7 +267,7 @@ describe("DashboardPage", () => {
   });
 
   it("puts holding actions before portfolio cards and detailed news", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/guru/decision-brief/latest") {
         return new Response(JSON.stringify({
@@ -297,7 +297,7 @@ describe("DashboardPage", () => {
         });
       }
       if (url.includes("/analyze") && init?.method === "POST") {
-        return new Response(JSON.stringify({ signals: [], unavailable_inputs: [], as_of: "2026-07-14T02:18:00Z" }), {
+        return new Response(JSON.stringify({ signals: [], unavailable_inputs: ["fundamentals"], as_of: "2026-07-14T02:18:00Z" }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
       }
@@ -349,6 +349,10 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Tesla delivery outlook changes")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /run analysis/i }));
-    expect(screen.getByRole("button", { name: /run analysis/i })).toBeEnabled();
+    expect(await screen.findByText(/some data was unavailable: fundamentals/i)).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/portfolios/1/analyze",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
