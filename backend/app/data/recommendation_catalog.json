@@ -1,0 +1,20 @@
+[
+  {"symbol":"AAPL","name":"Apple Inc.","market":"US","currency":"USD","instrument_type":"stock","sector":"Technology","themes":["consumer technology","digital services"]},
+  {"symbol":"MSFT","name":"Microsoft Corporation","market":"US","currency":"USD","instrument_type":"stock","sector":"Technology","themes":["cloud computing","artificial intelligence"]},
+  {"symbol":"NVDA","name":"NVIDIA Corporation","market":"US","currency":"USD","instrument_type":"stock","sector":"Technology","themes":["semiconductors","artificial intelligence"]},
+  {"symbol":"JPM","name":"JPMorgan Chase & Co.","market":"US","currency":"USD","instrument_type":"stock","sector":"Financials","themes":["banking"]},
+  {"symbol":"JNJ","name":"Johnson & Johnson","market":"US","currency":"USD","instrument_type":"stock","sector":"Healthcare","themes":["pharmaceuticals","medical devices"]},
+  {"symbol":"XOM","name":"Exxon Mobil Corporation","market":"US","currency":"USD","instrument_type":"stock","sector":"Energy","themes":["oil and gas"]},
+  {"symbol":"VTI","name":"Vanguard Total Stock Market ETF","market":"US","currency":"USD","instrument_type":"etf","sector":null,"themes":["broad market","diversification"]},
+  {"symbol":"QQQ","name":"Invesco QQQ Trust","market":"US","currency":"USD","instrument_type":"etf","sector":"Technology","themes":["large cap growth","technology"]},
+  {"symbol":"SHEL.L","name":"Shell plc","market":"UK","currency":"GBP","instrument_type":"stock","sector":"Energy","themes":["oil and gas","energy transition"]},
+  {"symbol":"AZN.L","name":"AstraZeneca plc","market":"UK","currency":"GBP","instrument_type":"stock","sector":"Healthcare","themes":["pharmaceuticals"]},
+  {"symbol":"HSBA.L","name":"HSBC Holdings plc","market":"UK","currency":"GBP","instrument_type":"stock","sector":"Financials","themes":["banking","asia"]},
+  {"symbol":"ULVR.L","name":"Unilever plc","market":"UK","currency":"GBP","instrument_type":"stock","sector":"Consumer Staples","themes":["consumer brands"]},
+  {"symbol":"ISF.L","name":"iShares Core FTSE 100 UCITS ETF","market":"UK","currency":"GBP","instrument_type":"etf","sector":null,"themes":["uk large cap","broad market"]},
+  {"symbol":"0700.HK","name":"Tencent Holdings Limited","market":"HK","currency":"HKD","instrument_type":"stock","sector":"Communication Services","themes":["internet platforms","gaming"]},
+  {"symbol":"9988.HK","name":"Alibaba Group Holding Limited","market":"HK","currency":"HKD","instrument_type":"stock","sector":"Consumer Discretionary","themes":["e-commerce","cloud computing"]},
+  {"symbol":"1299.HK","name":"AIA Group Limited","market":"HK","currency":"HKD","instrument_type":"stock","sector":"Financials","themes":["insurance","asia"]},
+  {"symbol":"2800.HK","name":"Tracker Fund of Hong Kong","market":"HK","currency":"HKD","instrument_type":"etf","sector":null,"themes":["hong kong large cap","broad market"]},
+  {"symbol":"3067.HK","name":"iShares Hang Seng TECH ETF","market":"HK","currency":"HKD","instrument_type":"etf","sector":"Technology","themes":["hong kong technology","internet platforms"]}
+]
