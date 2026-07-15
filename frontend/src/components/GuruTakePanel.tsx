@@ -81,26 +81,26 @@ export default function GuruTakePanel() {
           )}
 
           {take.data.payload.ideas.length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {take.data.payload.ideas.map((idea, i) => (
-                <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <div className="flex items-center gap-2">
+            <>
+              <ul className="mt-4 space-y-2">
+                {take.data.payload.ideas.map((idea, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
                     <VerdictChip
                       action={idea.action}
                       conviction={idea.conviction}
                       symbol={idea.symbol ?? undefined}
                     />
                     <span className="text-muted">{idea.rationale}</span>
-                  </div>
-                  <Link
-                    to={`/guru?discuss=${encodeURIComponent(JSON.stringify(idea))}`}
-                    className="shrink-0 text-xs text-accent underline"
-                  >
-                    Discuss any idea in chat →
-                  </Link>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to="/guru"
+                className="mt-3 inline-block text-xs text-accent underline"
+              >
+                Discuss these ideas in chat →
+              </Link>
+            </>
           )}
 
           <p className="mt-4 text-xs text-muted">

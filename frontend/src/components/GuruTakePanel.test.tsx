@@ -147,7 +147,7 @@ describe("GuruTakePanel", () => {
     expect(posted).toBe(true);
   });
 
-  it("renders a Discuss link for each idea", async () => {
+  it("renders a single Discuss link at the foot of the section, not per idea", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/guru/take/latest")) return jsonResponse(TAKE);
@@ -155,6 +155,8 @@ describe("GuruTakePanel", () => {
     });
     renderPanel();
 
-    expect(await screen.findByRole("link", { name: /discuss any idea in chat/i })).toBeInTheDocument();
+    const links = await screen.findAllByRole("link", { name: /discuss these ideas in chat/i });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "/guru");
   });
 });
