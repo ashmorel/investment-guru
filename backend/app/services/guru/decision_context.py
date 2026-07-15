@@ -26,6 +26,10 @@ _MAX_HEADLINES = 20
 _MAX_CANDIDATES = 12
 
 
+class DecisionContextTooLarge(RuntimeError):
+    """The required held-symbol skeleton cannot fit the context ceiling."""
+
+
 def _string(value: Decimal | None) -> str | None:
     return None if value is None else str(value)
 
@@ -156,10 +160,21 @@ async def _news(db, instrument_ids: set[int]):
 async def _candidate_context(db, user, profile, quote_service, holdings):
     seeds = await assemble_candidates(db, user, profile)
     quotes: dict[str, Any] = {}
+    input_availability = {
+        "quotes": True,
+        "history": True,
+        "fundamentals": True,
+        "news": True,
+        "signals": True,
+        "diversification": True,
+    }
     try:
         quotes = await quote_service.get_quotes(db, [seed.symbol for seed in seeds])
     except Exception:
-        pass
+        input_availability["quotes"] = False
+    if seeds and not quotes:
+        # QuoteService deliberately degrades provider exceptions to an empty result.
+        input_availability["quotes"] = False
 
     relevant = (
         await db.execute(
@@ -190,12 +205,14 @@ async def _candidate_context(db, user, profile, quote_service, holdings):
         try:
             return await quote_service.provider.get_history(seed.symbol)
         except Exception:
+            input_availability["history"] = False
             return []
 
     async def fundamentals_reader(seed: CandidateSeed):
         try:
             earnings = await quote_service.provider.get_earnings_date(seed.symbol)
         except Exception:
+            input_availability["fundamentals"] = False
             return None
         return {"next_earnings_date": earnings} if earnings is not None else None
 
@@ -208,6 +225,7 @@ async def _candidate_context(db, user, profile, quote_service, holdings):
                 await db.execute(select(NewsItem).where(NewsItem.instrument_id == instrument.id))
             ).scalars().all()
         except Exception:
+            input_availability["news"] = False
             return []
 
     async def signal_reader(seed: CandidateSeed):
@@ -229,6 +247,7 @@ async def _candidate_context(db, user, profile, quote_service, holdings):
                 )
             ).scalar_one_or_none()
         except Exception:
+            input_availability["signals"] = False
             return None
         if row is None:
             return None
@@ -247,7 +266,7 @@ async def _candidate_context(db, user, profile, quote_service, holdings):
         overlap = labels & held_labels
         return "low" if overlap == labels else ("medium" if overlap else "high")
 
-    return await score_candidates(
+    scored = await score_candidates(
         seeds,
         quote_reader=quote_reader,
         history_reader=history_reader,
@@ -257,6 +276,7 @@ async def _candidate_context(db, user, profile, quote_service, holdings):
         diversification_reader=diversification_reader,
         limit=_MAX_CANDIDATES,
     )
+    return scored, input_availability
 
 
 def _candidate_dict(candidate: ScoredCandidate):
@@ -327,6 +347,24 @@ def _truncate(context):
         } | {ref for row in context["candidates"] for ref in row["evidence_refs"]}
         context["evidence"] = [row for row in context["evidence"] if row["id"] in kept]
         context["availability"]["context_truncated"] = True
+    if len(json.dumps(context)) > MAX_CONTEXT_CHARS:
+        context["profile"]["free_text"] = ""
+        context["profile"]["sector_interests"] = []
+        context["portfolio_context"] = {}
+        context["availability"]["context_truncated"] = True
+    if len(json.dumps(context)) > MAX_CONTEXT_CHARS:
+        context["holdings"] = [
+            {
+                "symbol": row["symbol"],
+                "source_portfolio_ids": row["source_portfolio_ids"],
+                "availability": row["availability"],
+            }
+            for row in context["holdings"]
+        ]
+    if len(json.dumps(context)) > MAX_CONTEXT_CHARS:
+        raise DecisionContextTooLarge(
+            "Held-symbol decision context exceeds MAX_CONTEXT_CHARS"
+        )
     return context
 
 
@@ -343,12 +381,12 @@ async def build_decision_context(db, user, quote_service, fx) -> dict[str, Any]:
     unavailable = []
     try:
         signals = await _signals(db, user)
-        signals_ok = bool(signals)
+        signals_ok = True
     except Exception:
         signals, signals_ok = [], False
     try:
         news = await _news(db, instrument_ids)
-        news_ok = bool(news)
+        news_ok = True
     except Exception:
         news, news_ok = [], False
     try:
@@ -357,16 +395,28 @@ async def build_decision_context(db, user, quote_service, fx) -> dict[str, Any]:
     except Exception:
         portfolio_context, exposure_ok = {"groups": [], "total_base": None, "unpriced": []}, False
     try:
-        scored = await _candidate_context(db, user, profile, quote_service, holdings)
-        candidates, candidates_ok = [_candidate_dict(item) for item in scored], True
+        scored, candidate_inputs = await _candidate_context(
+            db, user, profile, quote_service, holdings
+        )
+        candidates = [_candidate_dict(item) for item in scored]
+        candidates_ok = all(candidate_inputs.values())
     except Exception:
         candidates, candidates_ok = [], False
+        candidate_inputs = {
+            "quotes": False,
+            "history": False,
+            "fundamentals": False,
+            "news": False,
+            "signals": False,
+            "diversification": False,
+        }
     availability = {
         "valuation": valuation_ok,
         "signals": signals_ok,
         "news": news_ok,
         "group_exposure": exposure_ok,
         "candidates": candidates_ok,
+        "candidate_inputs": candidate_inputs,
         "context_truncated": False,
     }
     unavailable.extend(
