@@ -134,9 +134,10 @@ async def test_stable_evidence_urls_and_independent_valuation_degradation(
     assert [row["evidence_ref"] for row in context["signals"]] == [f"signal:{signal.id}"]
     assert context["material_news"][0]["evidence_ref"] == f"news:{news.id}"
     assert context["material_news"][0]["url"] == "https://example.test/story"
-    assert {item["id"] for item in context["evidence"]} == {
+    assert {item["ref"] for item in context["evidence"]} == {
         f"signal:{signal.id}", f"news:{news.id}"
     }
+    assert all("id" not in item for item in context["evidence"])
 
 
 async def test_normalises_each_real_portfolio_value_to_gbp(
@@ -239,7 +240,7 @@ async def test_catalogue_candidate_evidence_does_not_create_instrument(
     refs = set(context["candidates"][0]["evidence_refs"])
     assert "candidate:CATONLY:news" in refs
     assert "candidate:CATONLY:diversification" in refs
-    assert refs <= {item["id"] for item in context["evidence"]}
+    assert refs <= {item["ref"] for item in context["evidence"]}
     after = await db_session.scalar(select(func.count()).select_from(Instrument))
     assert after == before
 

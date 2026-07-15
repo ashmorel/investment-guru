@@ -303,7 +303,7 @@ def _candidate_dict(candidate: ScoredCandidate):
 def _evidence(signals, news, candidates):
     out = [
         {
-            "id": row["evidence_ref"],
+            "ref": row["evidence_ref"],
             "kind": "signal",
             **{k: v for k, v in row.items() if k != "evidence_ref"},
         }
@@ -311,7 +311,7 @@ def _evidence(signals, news, candidates):
     ]
     out.extend(
         {
-            "id": row["evidence_ref"],
+            "ref": row["evidence_ref"],
             "kind": "news",
             **{k: v for k, v in row.items() if k != "evidence_ref"},
         }
@@ -322,7 +322,7 @@ def _evidence(signals, news, candidates):
             if value is not None:
                 out.append(
                     {
-                        "id": f"candidate:{candidate['symbol']}:{factor}",
+                        "ref": f"candidate:{candidate['symbol']}:{factor}",
                         "kind": "candidate",
                         "symbol": candidate["symbol"],
                         "factor": factor,
@@ -345,7 +345,7 @@ def _truncate(context):
         kept = {
             row["evidence_ref"] for key in ("signals", "material_news") for row in context[key]
         } | {ref for row in context["candidates"] for ref in row["evidence_refs"]}
-        context["evidence"] = [row for row in context["evidence"] if row["id"] in kept]
+        context["evidence"] = [row for row in context["evidence"] if row["ref"] in kept]
         context["availability"]["context_truncated"] = True
     if len(json.dumps(context)) > MAX_CONTEXT_CHARS:
         context["profile"]["free_text"] = ""

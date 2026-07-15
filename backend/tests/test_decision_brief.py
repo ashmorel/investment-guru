@@ -16,7 +16,7 @@ from app.services.guru.schemas import (
     DecisionNewsItem,
     HoldingDecision,
 )
-from app.services.guru.service import GuruService
+from app.services.guru.service import GuruService, _decision_invalid_refs
 from tests.conftest import _test_services
 
 
@@ -71,11 +71,17 @@ def _payload(*, holdings=None, candidates=None):
 def _context():
     return {
         "holdings": [{"symbol": "AAPL"}],
-        "candidates": [{"symbol": "MSFT"}],
+        "material_news": [{
+            "evidence_ref": "news:1", "symbol": "AAPL", "headline": "Apple update"
+        }],
+        "candidates": [{
+            "symbol": "MSFT", "evidence_refs": ["candidate:MSFT:momentum"]
+        }],
         "evidence": [
-            {"id": "signal:1"},
-            {"id": "news:1"},
-            {"id": "candidate:MSFT:momentum"},
+            {"ref": "signal:1", "kind": "signal", "symbol": "AAPL"},
+            {"ref": "news:1", "kind": "news", "symbol": "AAPL",
+             "headline": "Apple update"},
+            {"ref": "candidate:MSFT:momentum", "kind": "candidate", "symbol": "MSFT"},
         ],
     }
 
@@ -111,6 +117,59 @@ def test_decision_contract_keeps_urls_and_evidence_refs_as_strings():
     assert isinstance(payload.material_news[0].url, str)
     assert all(isinstance(ref, str) for ref in payload.holdings[0].evidence_refs)
     assert all(isinstance(ref, str) for ref in payload.candidates[0].evidence_refs)
+
+
+@pytest.mark.parametrize(
+    ("payload", "invalid_symbol", "invalid_ref"),
+    [
+        (_payload(candidates=[_candidate(symbol="AAPL", refs=())]), "AAPL", None),
+        (_payload(holdings=[_holding(symbol="MSFT", refs=())]), "MSFT", None),
+        (DecisionBriefPayload(**{
+            **_payload().model_dump(),
+            "material_news": [{
+                **_payload().material_news[0].model_dump(), "symbol": "MSFT"
+            }],
+        }), "MSFT", "news:1"),
+        (_payload(holdings=[_holding(refs=("candidate:MSFT:momentum",))]),
+         None, "candidate:MSFT:momentum"),
+        (_payload(candidates=[_candidate(refs=("signal:1",))]), None, "signal:1"),
+    ],
+)
+def test_decision_validation_rejects_cross_category_symbols_and_refs(
+    payload, invalid_symbol, invalid_ref
+):
+    invalid_symbols, invalid_refs = _decision_invalid_refs(payload, _context())
+    if invalid_symbol:
+        assert invalid_symbol in invalid_symbols
+    if invalid_ref:
+        assert invalid_ref in invalid_refs
+
+
+def test_decision_validation_rejects_cross_symbol_and_mismatched_news_refs():
+    ctx = _context()
+    ctx["holdings"].append({"symbol": "GOOG"})
+    ctx["evidence"].extend([
+        {"ref": "signal:2", "kind": "signal", "symbol": "GOOG"},
+        {"ref": "news:2", "kind": "news", "symbol": "GOOG", "headline": "Google update"},
+    ])
+    payload = _payload(holdings=[_holding(refs=("signal:2",))])
+    invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
+    assert invalid_symbols == set()
+    assert invalid_refs == {"signal:2"}
+
+    wrong_news = DecisionBriefPayload(**{
+        **_payload().model_dump(),
+        "material_news": [{
+            **_payload().material_news[0].model_dump(), "evidence_ref": "news:2"
+        }],
+    })
+    assert _decision_invalid_refs(wrong_news, ctx)[1] == {"news:2"}
+
+
+def test_decision_validation_requires_canonical_ref_key():
+    ctx = _context()
+    ctx["evidence"][0] = {"id": "signal:1", "kind": "signal", "symbol": "AAPL"}
+    assert _decision_invalid_refs(_payload(), ctx)[1] == {"signal:1"}
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -171,6 +230,33 @@ async def test_generate_decision_brief_corrects_invalid_refs_and_missing_holding
     assert "NOPE" in correction
     assert "invented:1" in correction
     assert "GOOG" in correction
+    usage = (await db_session.execute(
+        select(LlmUsage).where(LlmUsage.report_id == report.id)
+    )).scalar_one()
+    assert usage.input_tokens == 200
+    assert usage.output_tokens == 100
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_decision_brief_rejects_duplicate_holdings_twice(
+    db_session, monkeypatch
+):
+    user = User(email="decision-duplicate@test.dev", password_hash="x")
+    db_session.add(user)
+    await db_session.commit()
+    fake = FakeLLMProvider()
+    duplicate = _payload(holdings=[_holding(), _holding()])
+    fake.structured_queue.extend([duplicate, duplicate])
+
+    async def build(*args, **kwargs):
+        return _context()
+
+    monkeypatch.setattr("app.services.guru.decision_context.build_decision_context", build)
+    with pytest.raises(LLMError):
+        await _svc(fake).generate_decision_brief(db_session, user)
+    assert len(fake.calls) == 2
+    assert (await db_session.execute(select(GuruReport))).scalars().all() == []
+    assert (await db_session.execute(select(LlmUsage))).scalars().all() == []
 
 
 @pytest.mark.asyncio(loop_scope="session")

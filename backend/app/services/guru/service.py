@@ -59,19 +59,59 @@ _DECISION_INSTRUCTION = (
 def _decision_invalid_refs(
     payload: DecisionBriefPayload, ctx: dict
 ) -> tuple[set[str], set[str]]:
-    allowed_symbols = {h["symbol"] for h in ctx["holdings"]} | {
-        c["symbol"] for c in ctx["candidates"]
+    held_symbols = {row["symbol"] for row in ctx["holdings"]}
+    candidate_symbols = {row["symbol"] for row in ctx["candidates"]}
+    context_news = {
+        row["evidence_ref"]: row for row in ctx["material_news"]
+        if row["symbol"] in held_symbols
     }
-    allowed_refs = {e.get("ref", e.get("id")) for e in ctx["evidence"]}
-    used_symbols = {h.symbol for h in payload.holdings} | {
-        c.symbol for c in payload.candidates
-    } | {item.symbol for item in payload.material_news}
-    used_refs = {
-        ref for h in payload.holdings for ref in h.evidence_refs
-    } | {
-        ref for c in payload.candidates for ref in c.evidence_refs
-    } | {item.evidence_ref for item in payload.material_news}
-    return used_symbols - allowed_symbols, used_refs - allowed_refs
+    news_symbols = {row["symbol"] for row in context_news.values()}
+    evidence = {row["ref"]: row for row in ctx["evidence"] if "ref" in row}
+
+    invalid_symbols: set[str] = set()
+    invalid_refs: set[str] = set()
+    for holding in payload.holdings:
+        if holding.symbol not in held_symbols:
+            invalid_symbols.add(holding.symbol)
+        for ref in holding.evidence_refs:
+            item = evidence.get(ref)
+            if item is None or item.get("kind") not in {"signal", "news"} or (
+                item.get("symbol") != holding.symbol
+            ):
+                invalid_refs.add(ref)
+    for candidate in payload.candidates:
+        if candidate.symbol not in candidate_symbols:
+            invalid_symbols.add(candidate.symbol)
+        for ref in candidate.evidence_refs:
+            item = evidence.get(ref)
+            if item is None or item.get("kind") != "candidate" or (
+                item.get("symbol") != candidate.symbol
+            ):
+                invalid_refs.add(ref)
+    for news in payload.material_news:
+        if news.symbol not in news_symbols:
+            invalid_symbols.add(news.symbol)
+        context_item = context_news.get(news.evidence_ref)
+        evidence_item = evidence.get(news.evidence_ref)
+        if (
+            context_item is None
+            or context_item.get("symbol") != news.symbol
+            or context_item.get("headline") != news.headline
+            or evidence_item is None
+            or evidence_item.get("kind") != "news"
+            or evidence_item.get("symbol") != news.symbol
+        ):
+            invalid_refs.add(news.evidence_ref)
+    return invalid_symbols, invalid_refs
+
+
+def _decision_holding_coverage(payload: DecisionBriefPayload, ctx: dict) -> set[str]:
+    expected = {row["symbol"] for row in ctx["holdings"]}
+    counts = {symbol: 0 for symbol in expected}
+    for holding in payload.holdings:
+        if holding.symbol in counts:
+            counts[holding.symbol] += 1
+    return {symbol for symbol, count in counts.items() if count != 1}
 
 
 def _orso_invalid_codes(payload: OrsoAdvicePayload, fund_menu: set[str]) -> set[str]:
@@ -293,7 +333,6 @@ class GuruService:
             except DecisionContextTooLarge as exc:
                 raise LLMError("decision context is too large to generate safely") from exc
 
-            expected_holdings = {row["symbol"] for row in ctx["holdings"]}
             messages = [{
                 "role": "user",
                 "content": _DECISION_INSTRUCTION + "\n\n" + json.dumps(ctx),
@@ -306,16 +345,17 @@ class GuruService:
                 max_tokens=4096,
             )
             invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
-            missing_holdings = expected_holdings - {row.symbol for row in payload.holdings}
-            if invalid_symbols or invalid_refs or missing_holdings:
+            invalid_coverage = _decision_holding_coverage(payload, ctx)
+            if invalid_symbols or invalid_refs or invalid_coverage:
                 messages += [
                     {"role": "assistant", "content": payload.model_dump_json()},
                     {
                         "role": "user",
                         "content": (
                             f"Invalid symbols: {sorted(invalid_symbols)}. Invalid evidence "
-                            f"references: {sorted(invalid_refs)}. Missing holdings: "
-                            f"{sorted(missing_holdings)}. Return the complete decision brief "
+                            f"references: {sorted(invalid_refs)}. Holdings missing or not "
+                            f"listed exactly once: {sorted(invalid_coverage)}. Return the "
+                            "complete decision brief "
                             "again, covering every holding and using only symbols and evidence "
                             "references from the supplied context."
                         ),
@@ -334,12 +374,12 @@ class GuruService:
                     output_tokens=first_usage.output_tokens + usage.output_tokens,
                 )
                 invalid_symbols, invalid_refs = _decision_invalid_refs(payload, ctx)
-                missing_holdings = expected_holdings - {row.symbol for row in payload.holdings}
-                if invalid_symbols or invalid_refs or missing_holdings:
+                invalid_coverage = _decision_holding_coverage(payload, ctx)
+                if invalid_symbols or invalid_refs or invalid_coverage:
                     raise LLMError(
                         "decision brief remained invalid after correction: "
                         f"symbols={sorted(invalid_symbols)}, refs={sorted(invalid_refs)}, "
-                        f"missing_holdings={sorted(missing_holdings)}"
+                        f"invalid_coverage={sorted(invalid_coverage)}"
                     )
 
             report = GuruReport(
